@@ -8,7 +8,7 @@ load_dotenv()
 app = FastAPI(
     title="Assistant de Conformité Contractuelle",
     description="Système agentique de vérification OHADA / Code du Travail Mauritanien",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 app.add_middleware(
@@ -22,9 +22,8 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": "0.2.0"}
 
 
-# Routes seront enregistrées au Jalon 4
-# from api.routes import router
-# app.include_router(router, prefix="/api")
+from api.routes import router
+app.include_router(router, prefix="/api")
