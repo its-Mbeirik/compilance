@@ -1,2 +1,3 @@
-# Pipeline LangGraph — câblage au Jalon 3
-# pipeline.py   → StateGraph + PostgresSaver
+from graph.pipeline import build_pipeline, run_pipeline
+
+__all__ = ["build_pipeline", "run_pipeline"]

@@ -4,14 +4,28 @@ Utilisé par les tests, l'ingestion, et les nœuds LangGraph.
 """
 import os
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Generator
 
 import psycopg
 from pgvector.psycopg import register_vector
 
+# Charge .env depuis backend/ ou la racine du projet si présent
+try:
+    from dotenv import load_dotenv
+    for _candidate in [
+        Path(__file__).parent.parent / ".env",      # backend/.env
+        Path(__file__).parent.parent.parent / ".env",  # project root .env
+    ]:
+        if _candidate.exists():
+            load_dotenv(_candidate, override=False)
+            break
+except ImportError:
+    pass
+
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://conformite:conformite_secret@localhost:5432/conformite_db",
+    "postgresql://conformite:conformite_secret@localhost:5433/conformite_db",
 )
 
 
