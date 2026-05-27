@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 250 250 249;
+  --foreground: 23 23 23;
+  --muted: 115 115 115;
+  --border: 229 229 229;
+  --accent: 23 23 23;
+}
+
+* {
+  border-color: rgb(var(--border));
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  background: rgb(var(--background));
+  color: rgb(var(--foreground));
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.005em;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(0 0 0 / 0.12);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(0 0 0 / 0.22);
+}
+
+@layer utilities {
+  .animate-in {
+    animation: animate-in 0.18s ease-out;
+  }
+
+  @keyframes animate-in {
+    from { opacity: 0; transform: translateY(2px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .typing-dot {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    margin: 0 1px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: typing 1.4s infinite ease-in-out;
+  }
+
+  .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes typing {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
+  }
+}
+
+.prose :where(p):not(:where([class~="not-prose"] *)) {
+  margin-top: 0.45em;
+  margin-bottom: 0.45em;
+}
+.prose :where(h1, h2, h3, h4):not(:where([class~="not-prose"] *)) {
+  margin-top: 0.7em;
+  margin-bottom: 0.45em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.prose :where(ul, ol):not(:where([class~="not-prose"] *)) {
+  margin-top: 0.4em;
+  margin-bottom: 0.4em;
+}
+.prose :where(a):not(:where([class~="not-prose"] *)) {
+  color: rgb(23 23 23);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  text-decoration-color: rgb(163 163 163);
+}
+.prose :where(a):not(:where([class~="not-prose"] *)):hover {
+  text-decoration-color: rgb(23 23 23);
+}
