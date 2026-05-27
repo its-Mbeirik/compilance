@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+.eggs/
+
+# Environment
+.env
+*.env.local
+*.env.*.local
+
+# Models cache (large files)
+backend/.cache/
+*.bin
+*.safetensors
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+frontend/.next/
+frontend/node_modules/
+
+# Database
+*.sql.bak
+postgres_data/
+
+# Tests / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+model_cache/
+
+# Corpus PDFs (too large for git)
+backend/ingestion/pdfs/

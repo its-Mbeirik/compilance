@@ -1,0 +1,153 @@
+"""
+Jalon 2 — Script principal d'ingestion du corpus juridique.
+Usage:
+    python -m ingestion.ingest --pdf path/to/auscgie.pdf --jurisdiction ohada \
+                               --code AUSCGIE --version-date 2014-05-05
+
+    python -m ingestion.ingest --seed           # insère les articles de seed_articles.py
+    python -m ingestion.ingest --seed --embed   # seed + génère les vrais embeddings BGE-M3
+"""
+import argparse
+import logging
+import sys
+import time
+from pathlib import Path
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+
+def ingest_from_pdf(
+    pdf_path: str,
+    jurisdiction: str,
+    code_name: str,
+    version_date: str | None = None,
+    language: str = "fr",
+    batch_size: int = 32,
+    embed: bool = True,
+) -> int:
+    """
+    Pipeline complet : PDF → articles → embeddings → pgvector.
+    Retourne le nombre d'articles indexés.
+    """
+    from ingestion.parser import parse_pdf
+    from ingestion.embedder import embed_texts
+    from ingestion.loader import insert_articles
+
+    logger.info(f"Parsing {pdf_path} ...")
+    t0 = time.time()
+    articles = parse_pdf(pdf_path, jurisdiction, code_name, version_date, language)
+    logger.info(f"  {len(articles)} articles extraits en {time.time()-t0:.1f}s")
+
+    embeddings = None
+    if embed:
+        logger.info(f"Génération des embeddings BGE-M3 (batchs de {batch_size}) ...")
+        t1 = time.time()
+        texts = [a.full_text for a in articles]
+        embeddings = embed_texts(texts, batch_size=batch_size)
+        logger.info(f"  Embeddings générés en {time.time()-t1:.1f}s")
+
+    logger.info("Insertion dans pgvector ...")
+    t2 = time.time()
+    count = insert_articles(articles, embeddings)
+    logger.info(f"  {count} articles insérés en {time.time()-t2:.1f}s")
+
+    return count
+
+
+def ingest_seed(embed: bool = True, batch_size: int = 32) -> int:
+    """
+    Insère les articles de référence (seed_articles.py) avec ou sans embeddings.
+    Utile pour les tests sans PDFs officiels.
+    """
+    from ingestion.seed_articles import ALL_ARTICLES
+    from ingestion.loader import insert_articles
+
+    embeddings = None
+    if embed:
+        from ingestion.embedder import embed_texts
+        logger.info(
+            f"Génération des embeddings pour {len(ALL_ARTICLES)} articles seed ..."
+        )
+        texts = [a.full_text for a in ALL_ARTICLES]
+        embeddings = embed_texts(texts, batch_size=batch_size)
+
+    count = insert_articles(ALL_ARTICLES, embeddings)
+    logger.info(
+        f"Seed terminé : {count} articles "
+        f"({'avec' if embed else 'sans'} embeddings)"
+    )
+    return count
+
+
+def print_stats() -> None:
+    """Affiche les statistiques d'indexation."""
+    from ingestion.loader import count_articles
+    total = count_articles()
+    ohada = count_articles("ohada")
+    labor = count_articles("mauritania_labor")
+    logger.info(f"Stats legal_articles : total={total} | ohada={ohada} | labor={labor}")
+    if total > 0:
+        logger.info(
+            f"  Cible PDF : ~920 AUSCGIE + ~450 Code du Travail = ~1370 articles"
+        )
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Ingestion du corpus juridique OHADA / Code du Travail MR"
+    )
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--pdf", type=str, help="Chemin vers le PDF à ingérer")
+    group.add_argument("--seed", action="store_true",
+                       help="Insère les articles de référence (seed_articles.py)")
+
+    parser.add_argument("--jurisdiction", choices=["ohada", "mauritania_labor"],
+                        help="Juridiction (requis avec --pdf)")
+    parser.add_argument("--code", type=str,
+                        help="Nom du code, ex: AUSCGIE ou CODE_TRAVAIL_MR")
+    parser.add_argument("--version-date", type=str, default=None,
+                        help="Date de version ISO, ex: 2014-05-05")
+    parser.add_argument("--language", type=str, default="fr",
+                        choices=["fr", "ar"])
+    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--no-embed", action="store_true",
+                        help="Insère sans générer les embeddings")
+    parser.add_argument("--stats", action="store_true",
+                        help="Affiche les statistiques après ingestion")
+
+    args = parser.parse_args()
+    embed = not args.no_embed
+
+    if args.seed:
+        ingest_seed(embed=embed, batch_size=args.batch_size)
+    else:
+        if not args.jurisdiction or not args.code:
+            parser.error("--jurisdiction et --code sont requis avec --pdf")
+        if not Path(args.pdf).exists():
+            logger.error(f"Fichier introuvable : {args.pdf}")
+            sys.exit(1)
+        ingest_from_pdf(
+            pdf_path=args.pdf,
+            jurisdiction=args.jurisdiction,
+            code_name=args.code,
+            version_date=args.version_date,
+            language=args.language,
+            batch_size=args.batch_size,
+            embed=embed,
+        )
+
+    if args.stats:
+        print_stats()
+
+
+if __name__ == "__main__":
+    main()
