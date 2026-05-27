@@ -211,8 +211,8 @@ Article 7 — Associés
 def test_extractor_node_real_llm_ohada():
     """Test d'intégration : extraction réelle avec Claude sur un statut SARL."""
     import os
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        pytest.skip("ANTHROPIC_API_KEY non configuré")
+    if not (os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")):
+        pytest.skip("DEEPSEEK_API_KEY / OPENAI_API_KEY non configuré")
     from agents.extractor import extractor_node
     state = {
         "contract_id": "test-001",
@@ -260,8 +260,8 @@ Le salaire mensuel brut est de cent quatre-vingt mille (180 000) francs CFA.
 def test_extractor_node_real_llm_labor():
     """Test d'intégration : extraction réelle avec Claude sur un CDD."""
     import os
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        pytest.skip("ANTHROPIC_API_KEY non configuré")
+    if not (os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")):
+        pytest.skip("DEEPSEEK_API_KEY / OPENAI_API_KEY non configuré")
     from agents.extractor import extractor_node
     state = {
         "contract_id": "test-002",

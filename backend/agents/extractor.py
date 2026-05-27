@@ -6,7 +6,9 @@ et génère les clauses de conformité à vérifier.
 import logging
 from typing import Any
 
-from langchain_anthropic import ChatAnthropic
+import os
+
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from shared.schemas import (
@@ -146,11 +148,13 @@ def extractor_node(state: AgentState) -> dict[str, Any]:
     system_msg = _SYSTEM_OHADA if jurisdiction == "ohada" else _SYSTEM_LABOR
     few_shot = _FEW_SHOT_OHADA if jurisdiction == "ohada" else _FEW_SHOT_LABOR
 
-    llm = ChatAnthropic(
-        model="claude-sonnet-4-6",
+    llm = ChatOpenAI(
+        model=os.getenv("LLM_MODEL", "deepseek-chat"),
+        api_key=os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY"),
+        base_url=os.getenv("OPENAI_API_BASE", "https://api.deepseek.com"),
         temperature=0,
         max_tokens=4096,
-    ).with_structured_output(schema, include_raw=False)
+    ).with_structured_output(schema, method="function_calling", include_raw=False)
 
     prompt = (
         f"{few_shot}\n\n---\n\n"

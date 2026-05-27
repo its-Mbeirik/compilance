@@ -202,8 +202,8 @@ def test_run_pipeline_generates_contract_id():
 
 def _require_api_key():
     import os
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        pytest.skip("ANTHROPIC_API_KEY non configuré")
+    if not (os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")):
+        pytest.skip("DEEPSEEK_API_KEY / OPENAI_API_KEY non configuré")
 
 
 @pytest.fixture(scope="module")

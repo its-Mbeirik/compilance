@@ -164,7 +164,7 @@ def test_verifier_node_valid_citation():
 
     mock_output = _mock_llm_output()
 
-    with patch("agents.verifier.ChatAnthropic") as mock_cls:
+    with patch("agents.verifier.ChatOpenAI") as mock_cls:
         mock_llm = MagicMock()
         mock_llm.with_structured_output.return_value = mock_llm
         mock_llm.invoke.return_value = mock_output
@@ -198,7 +198,7 @@ def test_verifier_node_retry_on_invalid_citation():
         call_count["n"] += 1
         return bad_output if call_count["n"] == 1 else good_output
 
-    with patch("agents.verifier.ChatAnthropic") as mock_cls:
+    with patch("agents.verifier.ChatOpenAI") as mock_cls:
         mock_llm = MagicMock()
         mock_llm.with_structured_output.return_value = mock_llm
         mock_llm.invoke.side_effect = mock_invoke
@@ -221,7 +221,7 @@ def test_verifier_node_fallback_after_two_failures():
 
     bad_output = _mock_llm_output(cited_id="OHADA-AUSCGIE-999")
 
-    with patch("agents.verifier.ChatAnthropic") as mock_cls:
+    with patch("agents.verifier.ChatOpenAI") as mock_cls:
         mock_llm = MagicMock()
         mock_llm.with_structured_output.return_value = mock_llm
         mock_llm.invoke.return_value = bad_output
@@ -246,7 +246,7 @@ def test_verifier_node_multiple_clauses():
 
     good_output = _mock_llm_output()
 
-    with patch("agents.verifier.ChatAnthropic") as mock_cls:
+    with patch("agents.verifier.ChatOpenAI") as mock_cls:
         mock_llm = MagicMock()
         mock_llm.with_structured_output.return_value = mock_llm
         mock_llm.invoke.return_value = good_output
@@ -271,8 +271,8 @@ def test_verifier_node_real_llm_non_conforme():
     Capital 500 000 FCFA < 1 000 000 → verdict NON_CONFORME.
     """
     import os
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        pytest.skip("ANTHROPIC_API_KEY non configuré")
+    if not (os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")):
+        pytest.skip("DEEPSEEK_API_KEY / OPENAI_API_KEY non configuré")
     from agents.verifier import verifier_node
 
     clause = _make_clause(

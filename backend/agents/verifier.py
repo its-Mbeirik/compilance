@@ -6,7 +6,9 @@ Retry unique si la citation est invalide ; fallback EXIGE_REVUE sinon.
 import logging
 from typing import Any, Optional
 
-from langchain_anthropic import ChatAnthropic
+import os
+
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
@@ -144,11 +146,13 @@ def verifier_node(state: AgentState) -> dict[str, Any]:
     if not clauses:
         return {"findings": [], "errors": []}
 
-    llm = ChatAnthropic(
-        model="claude-sonnet-4-6",
+    llm = ChatOpenAI(
+        model=os.getenv("LLM_MODEL", "deepseek-chat"),
+        api_key=os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY"),
+        base_url=os.getenv("OPENAI_API_BASE", "https://api.deepseek.com"),
         temperature=0,
         max_tokens=2048,
-    ).with_structured_output(_VerifierOutput, include_raw=False)
+    ).with_structured_output(_VerifierOutput, method="function_calling", include_raw=False)
 
     for clause in clauses:
         clause_id: str = clause["clause_id"]
