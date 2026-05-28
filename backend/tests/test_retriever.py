@@ -8,7 +8,7 @@ Lance avec :
 """
 import numpy as np
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from agents.retriever import _rerank
 from shared.schemas import ClauseType, Jurisdiction
@@ -21,15 +21,15 @@ from shared.schemas import ClauseType, Jurisdiction
 def _make_articles(n: int = 10) -> list[dict]:
     return [
         {
-            "id": f"OHADA-AUSCGIE-{300 + i}",
-            "jurisdiction": "ohada",
-            "code_name": "AUSCGIE",
-            "article_number": str(300 + i),
-            "hierarchy_path": "Livre 2",
-            "full_text": f"Article {300 + i} : texte de test numéro {i}.",
+            "id": f"MAURITANIA_LABOR-CODE_TRAVAIL_MR-{i + 1}",
+            "jurisdiction": "mauritania_labor",
+            "code_name": "CODE_TRAVAIL_MR",
+            "article_number": str(i + 1),
+            "hierarchy_path": "Dispositions générales",
+            "full_text": f"Article {i + 1} : texte de test numéro {i}.",
             "language": "fr",
             "score": float(0.9 - i * 0.05),
-            "text": f"Article {300 + i} : texte de test numéro {i}.",
+            "text": f"Article {i + 1} : texte de test numéro {i}.",
         }
         for i in range(n)
     ]
@@ -37,14 +37,14 @@ def _make_articles(n: int = 10) -> list[dict]:
 
 def _make_clause(
     clause_id: str = "c001",
-    type_clause: str = ClauseType.CAPITAL_SOCIAL.value,
-    text: str = "capital social SARL 1 000 000 FCFA",
+    type_clause: str = ClauseType.PERIODE_ESSAI.value,
+    text: str = "période d'essai six mois maximum travailleur",
 ) -> dict:
     return {
         "clause_id": clause_id,
         "type_clause": type_clause,
         "text": text,
-        "jurisdiction_hint": Jurisdiction.OHADA.value,
+        "jurisdiction_hint": Jurisdiction.MAURITANIA_LABOR.value,
     }
 
 
@@ -54,14 +54,14 @@ def _make_clause(
 
 def test_rerank_returns_at_most_top_k():
     articles = _make_articles(10)
-    result = _rerank("capital social SARL", articles, top_k=5)
+    result = _rerank("période essai travailleur", articles, top_k=5)
     assert len(result) <= 5
 
 
 def test_rerank_fallback_when_no_reranker():
     articles = _make_articles(10)
     with patch("agents.retriever._load_reranker", return_value=None):
-        result = _rerank("capital social", articles, top_k=3)
+        result = _rerank("période essai", articles, top_k=3)
     assert len(result) == 3
     assert result[0]["id"] == articles[0]["id"]
 
@@ -85,7 +85,7 @@ def test_retriever_node_empty_clauses():
     from agents.retriever import retriever_node
     state = {
         "clauses": [],
-        "jurisdiction": "ohada",
+        "jurisdiction": "mauritania_labor",
         "contract_id": "t",
         "contract_text": "",
         "extracted": {},
@@ -109,7 +109,7 @@ def test_retriever_node_with_mock_search():
          patch("agents.retriever.search_articles", return_value=mock_articles):
         state = {
             "clauses": [_make_clause("clause-1"), _make_clause("clause-2")],
-            "jurisdiction": "ohada",
+            "jurisdiction": "mauritania_labor",
             "contract_id": "t",
             "contract_text": "",
             "extracted": {},
@@ -131,12 +131,12 @@ def test_retriever_node_adds_text_key():
     mock_embedding /= np.linalg.norm(mock_embedding)
     articles = [
         {
-            "id": "OHADA-AUSCGIE-311",
-            "jurisdiction": "ohada",
-            "code_name": "AUSCGIE",
-            "article_number": "311",
+            "id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
+            "jurisdiction": "mauritania_labor",
+            "code_name": "CODE_TRAVAIL_MR",
+            "article_number": "10",
             "hierarchy_path": None,
-            "full_text": "Article 311 : capital minimum 1 000 000 FCFA.",
+            "full_text": "Article 10 : La période d'essai ne peut excéder six mois.",
             "language": "fr",
             "score": 0.95,
         }
@@ -146,7 +146,7 @@ def test_retriever_node_adds_text_key():
          patch("agents.retriever.search_articles", return_value=articles):
         state = {
             "clauses": [_make_clause("c1")],
-            "jurisdiction": "ohada",
+            "jurisdiction": "mauritania_labor",
             "contract_id": "t",
             "contract_text": "",
             "extracted": {},
@@ -158,7 +158,7 @@ def test_retriever_node_adds_text_key():
 
     arts = result["retrievals"]["c1"]
     assert all("text" in a for a in arts)
-    assert arts[0]["text"] == "Article 311 : capital minimum 1 000 000 FCFA."
+    assert "Article 10" in arts[0]["text"]
 
 
 def test_retriever_node_handles_search_error():
@@ -171,7 +171,7 @@ def test_retriever_node_handles_search_error():
          patch("agents.retriever.search_articles", side_effect=RuntimeError("DB error")):
         state = {
             "clauses": [_make_clause("err-clause")],
-            "jurisdiction": "ohada",
+            "jurisdiction": "mauritania_labor",
             "contract_id": "t",
             "contract_text": "",
             "extracted": {},
@@ -202,17 +202,17 @@ def seeded_db():
 
 
 @pytest.mark.slow
-def test_retriever_finds_art311_for_capital_query(seeded_db):
-    """Critère PDF : requête capital SARL → Art.311 dans top-5."""
+def test_retriever_finds_art10_for_essai_query(seeded_db):
+    """Critère PDF : requête période essai → Art.10 CODE_TRAVAIL_MR dans top-5."""
     from agents.retriever import retriever_node
 
     clause = _make_clause(
-        clause_id="cap-clause",
-        text="capital social SARL 500 000 FCFA minimum",
+        clause_id="essai-clause",
+        text="période d'essai six mois maximum travailleur",
     )
     state = {
         "clauses": [clause],
-        "jurisdiction": "ohada",
+        "jurisdiction": "mauritania_labor",
         "contract_id": "t",
         "contract_text": "",
         "extracted": {},
@@ -221,9 +221,9 @@ def test_retriever_finds_art311_for_capital_query(seeded_db):
         "errors": [],
     }
     result = retriever_node(state)
-    ids = [a["id"] for a in result["retrievals"]["cap-clause"]]
-    assert "OHADA-AUSCGIE-311" in ids, (
-        f"Art.311 absent du top-5. Obtenu: {ids}"
+    ids = [a["id"] for a in result["retrievals"]["essai-clause"]]
+    assert "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10" in ids, (
+        f"Art.10 absent du top-5. Obtenu: {ids}"
     )
 
 
@@ -233,8 +233,8 @@ def test_retriever_top5_limit(seeded_db):
     from agents.retriever import retriever_node
 
     state = {
-        "clauses": [_make_clause("c1", text="capital social société")],
-        "jurisdiction": "ohada",
+        "clauses": [_make_clause("c1", text="contrat de travail emploi")],
+        "jurisdiction": "mauritania_labor",
         "contract_id": "t",
         "contract_text": "",
         "extracted": {},
@@ -248,7 +248,7 @@ def test_retriever_top5_limit(seeded_db):
 
 @pytest.mark.slow
 def test_retriever_labor_jurisdiction(seeded_db):
-    """Le filtrage par juridiction fonctionne."""
+    """Le filtrage par juridiction mauritania_labor fonctionne."""
     from agents.retriever import retriever_node
 
     state = {

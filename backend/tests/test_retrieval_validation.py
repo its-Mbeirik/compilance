@@ -1,7 +1,7 @@
 """
 Test Jalon 2 — Validation critique : critère Go/No-Go PDF.
-"La requête 'capital minimum SARL' retourne l'article 311 AUSCGIE en top-3
-sur 10 essais." (section 4.3 du PDF)
+"La requête 'période d'essai maximum' retourne l'article 10 du Code du Travail
+en top-3 sur 10 essais." (adapté section 4.3 du PDF)
 
 Lance avec : pytest tests/test_retrieval_validation.py -v -m slow
 Prérequis : docker compose up -d + sentence-transformers installé
@@ -24,36 +24,37 @@ def seeded_db_with_real_embeddings():
 
 
 # ---------------------------------------------------------------------------
-# Critère Go/No-Go Jalon 2 — requête "capital minimum SARL" → Art.311 top-3
+# Critère Go/No-Go Jalon 2 — requête "période essai" → Art.10 top-3
 # ---------------------------------------------------------------------------
 
-QUERIES_ART311 = [
-    "capital minimum SARL",
-    "capital social minimum d'une SARL",
-    "montant minimum du capital pour une SARL",
-    "capital social SARL 1 000 000 FCFA",
-    "SARL capital inférieur à un million de francs CFA",
-    "capital social SARL OHADA",
-    "montant du capital social SARL associés statuts",
-    "SARL capital minimum francs CFA obligation",
-    "capital SARL librement fixé associés minimum",
-    "seuil capital SARL Acte Uniforme",
+QUERIES_ART10 = [
+    "période d'essai contrat de travail",
+    "durée maximale période essai travailleur",
+    "engagement à l'essai durée maximum six mois",
+    "contrat travail période essai maximum",
+    "essai emploi durée limite Code du Travail",
+    "clause essai contrat travail mauritanien",
+    "période essai cadres durée",
+    "essai article 10 Code du Travail",
+    "durée période essai travailleur non cadre",
+    "maximum période essai mauritanie",
 ]
 
 
 @pytest.mark.slow
-def test_art311_in_top3_all_10_queries(seeded_db_with_real_embeddings):
+def test_art10_in_top3_all_10_queries(seeded_db_with_real_embeddings):
     """
-    Critère PDF section 4.3 :
-    'requête capital minimum SARL retourne Art. 311 AUSCGIE en top-3 sur 10 essais'
+    Critère PDF section 4.3 (adapté) :
+    'requête période essai retourne Art. 10 CODE_TRAVAIL_MR en top-3 sur 10 essais'
     """
+    target_id = "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10"
     failures = []
-    for query in QUERIES_ART311:
+    for query in QUERIES_ART10:
         q_emb = embed_query(query)
-        results = search_articles(q_emb, jurisdiction="ohada", top_k=3)
+        results = search_articles(q_emb, jurisdiction="mauritania_labor", top_k=3)
         ids = [r["id"] for r in results]
-        if "OHADA-AUSCGIE-311" not in ids:
-            top5 = search_articles(q_emb, jurisdiction="ohada", top_k=5)
+        if target_id not in ids:
+            top5 = search_articles(q_emb, jurisdiction="mauritania_labor", top_k=5)
             failures.append({
                 "query": query,
                 "top3": ids,
@@ -62,7 +63,7 @@ def test_art311_in_top3_all_10_queries(seeded_db_with_real_embeddings):
             })
 
     assert not failures, (
-        f"Art.311 absent du top-3 sur {len(failures)}/10 requêtes:\n"
+        f"Art.10 absent du top-3 sur {len(failures)}/10 requêtes:\n"
         + "\n".join(
             f"  '{f['query']}' → top3={f['top3']} | top5={f['top5']}"
             for f in failures
@@ -71,44 +72,45 @@ def test_art311_in_top3_all_10_queries(seeded_db_with_real_embeddings):
 
 
 @pytest.mark.slow
-def test_art311_in_top5_relaxed(seeded_db_with_real_embeddings):
+def test_art10_in_top5_relaxed(seeded_db_with_real_embeddings):
     """Test de robustesse avec seuil relaxé à top-5 (aucun échec toléré)."""
+    target_id = "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10"
     failures = []
-    for query in QUERIES_ART311:
+    for query in QUERIES_ART10:
         q_emb = embed_query(query)
-        results = search_articles(q_emb, jurisdiction="ohada", top_k=5)
+        results = search_articles(q_emb, jurisdiction="mauritania_labor", top_k=5)
         ids = [r["id"] for r in results]
-        if "OHADA-AUSCGIE-311" not in ids:
+        if target_id not in ids:
             failures.append(query)
 
     assert not failures, (
-        f"Art.311 absent du top-5 sur les requêtes : {failures}"
+        f"Art.10 absent du top-5 sur les requêtes : {failures}"
     )
 
 
 # ---------------------------------------------------------------------------
-# Tests de validation supplémentaires — règles des sections 5.3.1 et 5.3.2
+# Tests de validation supplémentaires — règles Code du Travail mauritanien
 # ---------------------------------------------------------------------------
 
 VALIDATION_QUERIES = [
     # (query, expected_article_id, top_k)
-    ("durée maximale société 99 ans",          "OHADA-AUSCGIE-28",         5),
-    ("siège social boîte postale interdit",    "OHADA-AUSCGIE-25",         5),
-    ("capital société anonyme SA minimum",     "OHADA-AUSCGIE-387",        5),
-    ("libération capital SA quart souscription", "OHADA-AUSCGIE-389",      5),
-    ("mentions obligatoires statuts société",  "OHADA-AUSCGIE-13",         5),
-    ("période d'essai maximum six mois",       "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10", 5),
-    ("CDD plus trois mois visa inspection",    "MAURITANIA_LABOR-CODE_TRAVAIL_MR-18", 5),
-    ("âge minimum travail quatorze ans",       "MAURITANIA_LABOR-CODE_TRAVAIL_MR-153", 5),
-    ("congés payés douze mois travail",        "MAURITANIA_LABOR-CODE_TRAVAIL_MR-178", 5),
-    ("contrat de travail définition employeur", "MAURITANIA_LABOR-CODE_TRAVAIL_MR-4",  5),
+    ("période d'essai maximum six mois",              "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",  5),
+    ("CDD plus trois mois visa inspection travail",   "MAURITANIA_LABOR-CODE_TRAVAIL_MR-18",  5),
+    ("âge minimum travail quatorze ans",              "MAURITANIA_LABOR-CODE_TRAVAIL_MR-153", 5),
+    ("congés payés douze mois travail",               "MAURITANIA_LABOR-CODE_TRAVAIL_MR-178", 5),
+    ("contrat de travail définition employeur",       "MAURITANIA_LABOR-CODE_TRAVAIL_MR-4",   5),
+    ("liberté travail interdit travail forcé obligatoire", "MAURITANIA_LABOR-CODE_TRAVAIL_MR-5", 5),
+    ("contrat travail forme écrit preuve",            "MAURITANIA_LABOR-CODE_TRAVAIL_MR-7",   5),
+    ("engagement essai définition apprécier",        "MAURITANIA_LABOR-CODE_TRAVAIL_MR-8",   5),
+    ("contrat individuel interdit contrat équipe",   "MAURITANIA_LABOR-CODE_TRAVAIL_MR-6",   5),
+    ("application code travail relations individuelles", "MAURITANIA_LABOR-CODE_TRAVAIL_MR-1", 5),
 ]
 
 
 @pytest.mark.slow
 def test_validation_rules_top5(seeded_db_with_real_embeddings):
     """
-    Vérifie que les 10 règles cibles des sections 5.3.1 et 5.3.2 du PDF
+    Vérifie que les 10 règles cibles du Code du Travail mauritanien
     sont retrouvées dans le top-5 (Recall@5 ≥ 0.80 attendu, cible 0.90).
     """
     found = 0
@@ -118,7 +120,7 @@ def test_validation_rules_top5(seeded_db_with_real_embeddings):
         q_emb = embed_query(query)
         results = search_articles(
             q_emb,
-            jurisdiction=expected_id.split("-")[0].lower() if "OHADA" in expected_id else "mauritania_labor",
+            jurisdiction="mauritania_labor",
             top_k=top_k,
         )
         ids = [r["id"] for r in results]

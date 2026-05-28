@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from ingestion.loader import count_articles, insert_articles, search_articles
-from ingestion.seed_articles import AUSCGIE_ARTICLES, CODE_TRAVAIL_ARTICLES, ALL_ARTICLES
+from ingestion.seed_articles import CODE_COMMERCE_ARTICLES, CODE_TRAVAIL_ARTICLES, ALL_ARTICLES
 
 
 @pytest.mark.integration
@@ -21,11 +21,11 @@ def test_seed_insert_without_embeddings():
 
 
 @pytest.mark.integration
-def test_seed_insert_ohada_count():
-    insert_articles(AUSCGIE_ARTICLES, embeddings=None)
-    n = count_articles("ohada")
-    assert n >= len(AUSCGIE_ARTICLES), (
-        f"Attendu >= {len(AUSCGIE_ARTICLES)} articles OHADA, obtenu {n}"
+def test_seed_insert_commerce_count():
+    insert_articles(CODE_COMMERCE_ARTICLES, embeddings=None)
+    n = count_articles("mauritania_labor")
+    assert n >= len(CODE_COMMERCE_ARTICLES), (
+        f"Attendu >= {len(CODE_COMMERCE_ARTICLES)} articles, obtenu {n}"
     )
 
 
@@ -63,7 +63,6 @@ def test_insert_with_fake_embeddings():
 @pytest.mark.integration
 def test_search_returns_results_with_embeddings():
     """Vérifie que search_articles fonctionne avec des embeddings présents."""
-    # S'assure qu'il y a au moins un article avec embedding
     n = len(ALL_ARTICLES)
     fake_embs = np.random.rand(n, 1024).astype(np.float32)
     fake_embs /= np.linalg.norm(fake_embs, axis=1, keepdims=True)
@@ -72,7 +71,7 @@ def test_search_returns_results_with_embeddings():
     query_emb = np.random.rand(1024).astype(np.float32)
     query_emb /= np.linalg.norm(query_emb)
 
-    results = search_articles(query_emb, jurisdiction="ohada", top_k=5)
+    results = search_articles(query_emb, jurisdiction="mauritania_labor", top_k=5)
     assert len(results) > 0
     assert all("id" in r for r in results)
     assert all("score" in r for r in results)
@@ -91,12 +90,13 @@ def test_search_scores_between_minus1_and_1():
 
 @pytest.mark.integration
 def test_search_filtered_by_jurisdiction():
-    """La recherche filtrée par juridiction ne retourne que des articles de cette juridiction."""
+    """La recherche filtrée par juridiction ne retourne que des articles mauritaniens."""
     query_emb = np.random.rand(1024).astype(np.float32)
     query_emb /= np.linalg.norm(query_emb)
 
-    ohada_results = search_articles(query_emb, jurisdiction="ohada", top_k=10)
     labor_results = search_articles(query_emb, jurisdiction="mauritania_labor", top_k=10)
-
-    assert all(r["jurisdiction"] == "ohada" for r in ohada_results)
     assert all(r["jurisdiction"] == "mauritania_labor" for r in labor_results)
+
+    # Aucun article n'a jurisdiction="ohada" depuis la migration du corpus
+    no_results = search_articles(query_emb, jurisdiction="ohada", top_k=10)
+    assert len(no_results) == 0, "Le corpus ne contient plus d'articles OHADA"

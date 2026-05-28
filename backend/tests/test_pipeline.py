@@ -16,19 +16,6 @@ from shared.schemas import AgentState, FindingVerdict
 # Contrats de test
 # ---------------------------------------------------------------------------
 
-SARL_CONTRACT = """\
-STATUTS DE TECH SAHEL SARL
-
-Article 1 — La société est constituée sous forme de SARL dénommée TECH SAHEL SARL.
-Article 2 — Siège : Nouakchott, Rue des Nations Unies.
-Article 3 — Objet : conseil en informatique et développement logiciel.
-Article 4 — Durée : quatre-vingt-dix-neuf (99) ans.
-Article 5 — Capital : CINQ CENT MILLE (500 000) francs CFA, divisé en 50 parts de 10 000 FCFA.
-Associés :
-  - M. Brahim Ould Cheikh : 25 parts, apport 250 000 FCFA
-  - Mme Fatima Mint Sidi : 25 parts, apport 250 000 FCFA
-"""
-
 CDD_CONTRACT = """\
 CONTRAT À DURÉE DÉTERMINÉE
 
@@ -38,6 +25,17 @@ Article 1 : M. Sy est engagé comme Technicien pour 4 mois (du 01/02/2026 au 31/
 Article 2 : Période d'essai : 1 mois.
 Article 3 : Salaire : 120 000 FCFA/mois.
 NB : Ce contrat n'a pas été soumis à l'Inspecteur du Travail.
+"""
+
+CDI_CONTRACT = """\
+CONTRAT À DURÉE INDÉTERMINÉE
+
+Entre ACME SA (employeur) et Mme Aïcha Mint Brahim (employée).
+
+Article 1 : Mme Brahim est engagée comme Développeuse Web.
+Article 2 : Période d'essai : 6 mois.
+Article 3 : Salaire : 250 000 FCFA/mois.
+Article 4 : Lieu de travail : Nouakchott.
 """
 
 
@@ -61,7 +59,7 @@ def test_pipeline_initial_state_structure():
     state: AgentState = {
         "contract_id": "test-001",
         "contract_text": "texte",
-        "jurisdiction": "ohada",
+        "jurisdiction": "mauritania_labor",
         "extracted": {},
         "clauses": [],
         "retrievals": {},
@@ -80,21 +78,21 @@ def _make_mock_extractor(clauses: list[dict] | None = None):
     if clauses is None:
         clauses = [{
             "clause_id": "mock-c1",
-            "type_clause": "capital_social",
-            "text": "capital social SARL 500 000 FCFA",
-            "jurisdiction_hint": "ohada",
+            "type_clause": "periode_essai",
+            "text": "période d'essai six mois maximum travailleur",
+            "jurisdiction_hint": "mauritania_labor",
         }]
     def _mock_extractor(state):
-        return {"extracted": {"forme_sociale": "SARL"}, "clauses": clauses}
+        return {"extracted": {"type_contrat": "CDD"}, "clauses": clauses}
     return _mock_extractor
 
 
 def _make_mock_retriever(arts_per_clause: list[dict] | None = None):
     if arts_per_clause is None:
         arts_per_clause = [{
-            "id": "OHADA-AUSCGIE-311",
-            "full_text": "Article 311 : Le montant du capital social ne peut être inférieur à un million (1 000 000) de francs CFA.",
-            "text": "Article 311 : Le montant du capital social ne peut être inférieur à un million (1 000 000) de francs CFA.",
+            "id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
+            "full_text": "Article 10 : La période d'essai ne peut excéder six mois pour les travailleurs non cadres.",
+            "text": "Article 10 : La période d'essai ne peut excéder six mois pour les travailleurs non cadres.",
             "score": 0.95,
         }]
     def _mock_retriever(state):
@@ -108,9 +106,9 @@ def _make_mock_verifier():
         findings = [{
             "clause_id": c["clause_id"],
             "verdict": FindingVerdict.NON_CONFORME.value,
-            "cited_article_id": "OHADA-AUSCGIE-311",
-            "quoted_text": "ne peut être inférieur à un million (1 000 000) de francs CFA.",
-            "recommendation": "Augmenter le capital.",
+            "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
+            "quoted_text": "ne peut excéder six mois.",
+            "recommendation": "Réduire la période d'essai à 6 mois maximum.",
             "severity": "BLOQUANT",
             "citation_valid": True,
         } for c in state["clauses"]]
@@ -120,29 +118,8 @@ def _make_mock_verifier():
 
 def test_run_pipeline_with_mocked_nodes():
     """Pipeline end-to-end avec les 3 nœuds mockés."""
-    with patch("agents.extractor.extractor_node", _make_mock_extractor()), \
-         patch("agents.retriever.retriever_node", _make_mock_retriever()), \
-         patch("agents.verifier.verifier_node", _make_mock_verifier()):
-
-        # Import après le patch pour que LangGraph enregistre les mocks
-        from graph.pipeline import _build_graph
-        from langgraph.checkpoint.memory import MemorySaver
-
-        g = _build_graph()
-
-        import importlib
-        import agents.extractor as ext_mod
-        import agents.retriever as ret_mod
-        import agents.verifier as ver_mod
-
-        # Patch au niveau du module graph.pipeline
-        with patch("graph.pipeline.extractor_node", _make_mock_extractor()), \
-             patch("graph.pipeline.retriever_node", _make_mock_retriever()), \
-             patch("graph.pipeline.verifier_node", _make_mock_verifier()):
-            pass  # Les nœuds sont résolus à la compilation
-
-    # Test direct avec les mocks comme nodes
     from langgraph.graph import END, START, StateGraph
+    from langgraph.checkpoint.memory import MemorySaver
 
     mock_ext = _make_mock_extractor()
     mock_ret = _make_mock_retriever()
@@ -157,13 +134,12 @@ def test_run_pipeline_with_mocked_nodes():
     g.add_edge("retriever", "verifier")
     g.add_edge("verifier", END)
 
-    from langgraph.checkpoint.memory import MemorySaver
     pipeline = g.compile(checkpointer=MemorySaver())
 
     initial_state = {
         "contract_id": "test-pipeline-01",
-        "contract_text": SARL_CONTRACT,
-        "jurisdiction": "ohada",
+        "contract_text": CDD_CONTRACT,
+        "jurisdiction": "mauritania_labor",
         "extracted": {},
         "clauses": [],
         "retrievals": {},
@@ -189,7 +165,7 @@ def test_run_pipeline_generates_contract_id():
         }
         mock_build.return_value = mock_pipeline
 
-        result = run_pipeline("texte", "ohada", contract_id=None)
+        result = run_pipeline("texte", "mauritania_labor", contract_id=None)
 
     call_args = mock_pipeline.invoke.call_args
     state_arg = call_args[0][0]
@@ -220,29 +196,6 @@ def seeded_db_with_embeddings():
 
 
 @pytest.mark.slow
-def test_pipeline_ohada_sarl_detects_capital_violation(seeded_db_with_embeddings):
-    """
-    Pipeline complet : SARL avec capital 500 000 FCFA (< 1 000 000).
-    Attend au moins un finding NON_CONFORME sur le capital.
-    """
-    _require_api_key()
-    result = run_pipeline(SARL_CONTRACT, "ohada")
-
-    assert "findings" in result
-    assert len(result["findings"]) >= 1
-
-    capital_findings = [
-        f for f in result["findings"]
-        if f.get("type_clause") == "capital_social"
-        or "capital" in f.get("clause_id", "").lower()
-        or "AUSCGIE-311" in f.get("cited_article_id", "")
-    ]
-    # Au moins une clause doit avoir été vérifiée
-    assert len(result["clauses"]) >= 1, "L'extracteur doit générer des clauses"
-    assert len(result["findings"]) >= 1, "Le vérificateur doit générer des findings"
-
-
-@pytest.mark.slow
 def test_pipeline_labor_cdd_detects_issues(seeded_db_with_embeddings):
     """
     Pipeline complet : CDD sans visa inspection + employé potentiellement mineur.
@@ -260,7 +213,7 @@ def test_pipeline_labor_cdd_detects_issues(seeded_db_with_embeddings):
 def test_pipeline_findings_have_required_fields(seeded_db_with_embeddings):
     """Tous les findings doivent avoir les champs requis."""
     _require_api_key()
-    result = run_pipeline(SARL_CONTRACT, "ohada")
+    result = run_pipeline(CDD_CONTRACT, "mauritania_labor")
 
     for f in result["findings"]:
         assert "clause_id" in f, f"Finding sans clause_id: {f}"
@@ -275,16 +228,16 @@ def test_pipeline_no_errors_on_valid_contract(seeded_db_with_embeddings):
     """Un contrat bien formaté ne doit pas générer d'erreurs d'extraction."""
     _require_api_key()
     valid_contract = """\
-STATUTS DE BONNE CONFORMITE SARL
+CONTRAT À DURÉE INDÉTERMINÉE
 
-Article 1 : Forme : Société à Responsabilité Limitée dénommée BONNE CONFORMITE SARL.
-Article 2 : Siège : Nouakchott, Avenue des Ambassadeurs, Immeuble Oasis.
-Article 3 : Objet : Commerce général et import-export.
-Article 4 : Durée : quatre-vingt-dix-neuf (99) ans.
-Article 5 : Capital : DEUX MILLIONS (2 000 000) de francs CFA, libéré intégralement.
-Associés : M. Ali Ould Sid : 200 parts à 10 000 FCFA.
+Entre la société BONNE CONFORMITE SARL (employeur) et M. Ali Ould Sid (employé).
+
+Article 1 : M. Ali est engagé comme Ingénieur Informatique.
+Article 2 : Période d'essai : 3 mois.
+Article 3 : Salaire mensuel brut : 350 000 FCFA.
+Article 4 : Lieu de travail : Nouakchott, Mauritanie.
+Article 5 : Date de prise de poste : 01/06/2026.
 """
-    result = run_pipeline(valid_contract, "ohada")
-    # Il peut y avoir des findings CONFORME, mais pas d'erreurs d'extraction
+    result = run_pipeline(valid_contract, "mauritania_labor")
     pipeline_errors = [e for e in result.get("errors", []) if "Extracteur" in e]
     assert not pipeline_errors, f"Erreurs d'extraction: {pipeline_errors}"

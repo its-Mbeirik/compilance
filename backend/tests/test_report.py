@@ -13,38 +13,38 @@ from api.report import generate_html, _build_context
 ANALYSIS_DONE = {
     "id": "abc123",
     "status": "done",
-    "jurisdiction": "ohada",
-    "doc_type": "statuts",
+    "jurisdiction": "mauritania_labor",
+    "doc_type": "contrat_travail",
     "findings": [
         {
-            "clause_id": "cap-001",
+            "clause_id": "pe-001",
             "verdict": "NON_CONFORME",
             "severity": "BLOQUANT",
-            "cited_article_id": "OHADA-AUSCGIE-311",
-            "quoted_text": "Il ne peut être inférieur à un million (1 000 000) de francs CFA.",
-            "recommendation": "Augmenter le capital à 1 000 000 FCFA minimum.",
+            "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
+            "quoted_text": "La période d'essai ne peut excéder six mois.",
+            "recommendation": "Réduire la période d'essai à 6 mois maximum.",
             "citation_valid": True,
         },
         {
-            "clause_id": "dur-001",
+            "clause_id": "age-001",
             "verdict": "CONFORME",
             "severity": "MINEUR",
-            "cited_article_id": "OHADA-AUSCGIE-28",
-            "quoted_text": "La durée de la société ne peut excéder quatre-vingt-dix-neuf ans.",
+            "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-153",
+            "quoted_text": "L'âge minimum d'admission au travail est fixé à quatorze ans.",
             "recommendation": None,
             "citation_valid": True,
         },
         {
-            "clause_id": "siege-001",
+            "clause_id": "visa-001",
             "verdict": "EXIGE_REVUE",
             "severity": "MAJEUR",
-            "cited_article_id": "OHADA-AUSCGIE-25",
-            "quoted_text": "Le siège social ne peut être une boîte postale.",
-            "recommendation": "Vérifier que le siège est une adresse physique.",
+            "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-18",
+            "quoted_text": "Le CDD de plus de trois mois doit être visé par l'Inspecteur du Travail.",
+            "recommendation": "Faire viser le contrat par l'Inspecteur du Travail.",
             "citation_valid": False,
         },
     ],
-    "extracted": {"forme_sociale": "SARL", "capital_social_fcfa": 500000},
+    "extracted": {"type_contrat": "CDD", "duree_mois": 6},
     "created_at": "2026-05-27T10:00:00",
     "finished_at": "2026-05-27T10:01:30",
 }
@@ -74,7 +74,7 @@ def test_build_context_total():
 def test_build_context_bloquants():
     ctx = _build_context(ANALYSIS_DONE)
     assert len(ctx["bloquants"]) == 1
-    assert ctx["bloquants"][0]["cited_article_id"] == "OHADA-AUSCGIE-311"
+    assert ctx["bloquants"][0]["cited_article_id"] == "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10"
 
 
 def test_build_context_empty_findings():
@@ -85,7 +85,7 @@ def test_build_context_empty_findings():
 
 def test_build_context_jurisdiction_label():
     ctx = _build_context(ANALYSIS_DONE)
-    assert "OHADA" in ctx["jurisdiction_label"]
+    assert "Travail" in ctx["jurisdiction_label"] or "mauritanien" in ctx["jurisdiction_label"].lower()
 
 
 def test_build_context_labor_label():
@@ -113,13 +113,13 @@ def test_generate_html_contains_verdicts():
 
 def test_generate_html_contains_article_ids():
     html = generate_html(ANALYSIS_DONE)
-    assert "OHADA-AUSCGIE-311" in html
-    assert "OHADA-AUSCGIE-28" in html
+    assert "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10" in html
+    assert "MAURITANIA_LABOR-CODE_TRAVAIL_MR-153" in html
 
 
 def test_generate_html_contains_recommendation():
     html = generate_html(ANALYSIS_DONE)
-    assert "Augmenter le capital" in html
+    assert "Réduire la période d'essai" in html
 
 
 def test_generate_html_contains_bloquant_section():
@@ -149,7 +149,7 @@ def test_generate_html_quote_truncated():
             "clause_id": "x",
             "verdict": "CONFORME",
             "severity": None,
-            "cited_article_id": "OHADA-AUSCGIE-1",
+            "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-1",
             "quoted_text": "A" * 300,
             "recommendation": None,
             "citation_valid": True,
