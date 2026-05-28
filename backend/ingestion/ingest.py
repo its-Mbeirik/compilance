@@ -59,41 +59,59 @@ def ingest_from_pdf(
     return count
 
 
-def ingest_seed(embed: bool = True, batch_size: int = 32) -> int:
+def ingest_seed(embed: bool = True, batch_size: int = 16, chunk_size: int = 200) -> int:
     """
     Insère les articles de référence (seed_articles.py) avec ou sans embeddings.
-    Utile pour les tests sans PDFs officiels.
+    Traite par chunks de `chunk_size` pour éviter les OOM sur CPU.
+    Ignore les articles déjà présents en base (idempotent).
     """
     from ingestion.seed_articles import ALL_ARTICLES
-    from ingestion.loader import insert_articles
+    from ingestion.loader import insert_articles, count_articles
 
-    embeddings = None
-    if embed:
+    # Skip articles already in DB (allows resume after crash)
+    already = count_articles()
+    articles_to_process = ALL_ARTICLES[already:]
+    if already > 0:
+        logger.info(f"Reprise : {already} articles déjà en base, {len(articles_to_process)} restants")
+
+    if not articles_to_process:
+        logger.info("Tous les articles sont déjà en base.")
+        return already
+
+    total_inserted = 0
+
+    if not embed:
+        total_inserted = insert_articles(articles_to_process, None)
+    else:
         from ingestion.embedder import embed_texts
-        logger.info(
-            f"Génération des embeddings pour {len(ALL_ARTICLES)} articles seed ..."
-        )
-        texts = [a.full_text for a in ALL_ARTICLES]
-        embeddings = embed_texts(texts, batch_size=batch_size)
+        total = len(articles_to_process)
+        logger.info(f"Génération des embeddings pour {total} articles (chunks de {chunk_size}) ...")
 
-    count = insert_articles(ALL_ARTICLES, embeddings)
+        for start in range(0, total, chunk_size):
+            chunk = articles_to_process[start: start + chunk_size]
+            texts = [a.full_text[:2000] for a in chunk]  # truncate to avoid OOM on long articles
+            logger.info(f"  Chunk {start//chunk_size + 1}: articles {start+1}–{min(start+len(chunk), total)}/{total}")
+            embs = embed_texts(texts, batch_size=batch_size)
+            n = insert_articles(chunk, embs)
+            total_inserted += n
+            logger.info(f"  → {n} insérés (total so far: {already + total_inserted})")
+
     logger.info(
-        f"Seed terminé : {count} articles "
+        f"Seed terminé : {already + total_inserted} articles au total "
         f"({'avec' if embed else 'sans'} embeddings)"
     )
-    return count
+    return already + total_inserted
 
 
 def print_stats() -> None:
     """Affiche les statistiques d'indexation."""
     from ingestion.loader import count_articles
     total = count_articles()
-    ohada = count_articles("ohada")
     labor = count_articles("mauritania_labor")
-    logger.info(f"Stats legal_articles : total={total} | ohada={ohada} | labor={labor}")
+    logger.info(f"Stats legal_articles : total={total} | mauritania_labor={labor}")
     if total > 0:
         logger.info(
-            f"  Cible PDF : ~920 AUSCGIE + ~450 Code du Travail = ~1370 articles"
+            "  Sources : Code du Travail + COC + Convention Collective"
         )
 
 

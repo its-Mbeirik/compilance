@@ -1,15 +1,17 @@
 """
 Jalon 4 — Routes FastAPI.
-POST  /api/analyses            soumet un contrat → analysis_id (202)
-GET   /api/analyses            liste les analyses
-GET   /api/analyses/{id}       statut + findings
-GET   /api/analyses/{id}/report  téléchargement PDF (ou HTML fallback)
-POST  /api/chat/{id}           Q&A contextuelle sur une analyse
+POST  /api/analyses                 soumet un contrat → analysis_id (202)
+GET   /api/analyses                 liste les analyses
+GET   /api/analyses/{id}            statut + findings
+GET   /api/analyses/{id}/report     téléchargement PDF (ou HTML fallback)
+POST  /api/chat/{id}                Q&A contextuelle sur une analyse
+POST  /api/generate-document        génère un contrat .docx via LLM
+POST  /api/correct-document/{id}    corrige un contrat analysé → .docx
 """
 import logging
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Optional  # noqa: F401 (kept for future use)
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, Response
@@ -65,11 +67,24 @@ def _run_pipeline_bg(analysis_id: str, contract_text: str, jurisdiction: str) ->
 # POST /api/analyses
 # ---------------------------------------------------------------------------
 
+def _detect_jurisdiction(text: str) -> str:
+    """Heuristic detection based on keyword frequency."""
+    lower = text.lower()
+    labor_kw = [
+        "contrat de travail", "code du travail", "employeur", "salarié",
+        "travailleur", "licenciement", "durée du travail", "salaire",
+        "mauritanie", "mauritanien", "rémunération", "embauche",
+        "convention collective", "période d'essai",
+    ]
+    hits = sum(1 for kw in labor_kw if kw in lower)
+    return "mauritania_labor"
+
+
 @router.post("/analyses", status_code=202)
 async def submit_analysis(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    jurisdiction: Literal["ohada", "mauritania_labor"] = Form(...),
+    jurisdiction: str = Form("auto"),
 ):
     """
     Soumet un contrat (PDF/DOCX/TXT) pour analyse.
@@ -90,6 +105,10 @@ async def submit_analysis(
     contract_text = extract_text(content, file.filename or "file.txt")
     if not contract_text.strip():
         raise HTTPException(status_code=422, detail="Impossible d'extraire le texte du fichier")
+
+    # Résolution de la juridiction
+    if jurisdiction != "mauritania_labor":
+        jurisdiction = _detect_jurisdiction(contract_text)
 
     # Sauvegarde le fichier
     doc_type = "statuts" if jurisdiction == "ohada" else "contrat_travail"
@@ -165,11 +184,22 @@ async def get_report(analysis_id: str, fmt: str = "pdf"):
 
 
 # ---------------------------------------------------------------------------
-# POST /api/chat/{id}
+# POST /api/chat          — questions générales sans document
+# POST /api/chat/{id}     — Q&A sur une analyse existante
 # ---------------------------------------------------------------------------
 
 class ChatRequest(BaseModel):
     message: str
+
+
+@router.post("/chat")
+async def general_chat(body: ChatRequest):
+    """
+    Q&A juridique générale sans document.
+    Répond aux questions sur le droit du travail mauritanien et le COC.
+    """
+    answer = _ask_llm_general(body.message)
+    return {"answer": answer}
 
 
 @router.post("/chat/{analysis_id}")
@@ -209,6 +239,30 @@ def _build_chat_context(findings: list, extracted: dict, jurisdiction: str) -> s
     return "\n".join(lines)
 
 
+def _ask_llm_general(question: str) -> str:
+    from langchain_openai import ChatOpenAI
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    system = (
+        "Tu es un assistant juridique spécialisé en droit mauritanien : "
+        "Code du Travail (Loi N° 2004-017), Code des Obligations et des Contrats "
+        "(Ordonnance n° 89-126), et Convention Collective Générale du Travail. "
+        "Réponds en français, de façon claire et précise. "
+        "Si la question dépasse ton domaine juridique, dis-le poliment. "
+        "Pour analyser un contrat spécifique, l'utilisateur peut joindre un document."
+    )
+
+    llm = ChatOpenAI(
+        model=os.getenv("LLM_MODEL", "deepseek-chat"),
+        api_key=os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY"),
+        base_url=os.getenv("OPENAI_API_BASE", "https://api.deepseek.com"),
+        temperature=0.3,
+        max_tokens=1024,
+    )
+    response = llm.invoke([SystemMessage(content=system), HumanMessage(content=question)])
+    return response.content
+
+
 def _ask_llm(question: str, context: str) -> str:
     from langchain_openai import ChatOpenAI
     from langchain_core.messages import HumanMessage, SystemMessage
@@ -228,3 +282,61 @@ def _ask_llm(question: str, context: str) -> str:
     )
     response = llm.invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
     return response.content
+
+
+# ---------------------------------------------------------------------------
+# POST /api/generate-document   — génère un nouveau contrat .docx
+# ---------------------------------------------------------------------------
+
+class GenerateDocRequest(BaseModel):
+    description: str
+
+
+@router.post("/generate-document")
+async def generate_document(body: GenerateDocRequest):
+    """
+    Génère un contrat complet conforme au droit mauritanien et le retourne en .docx.
+    """
+    from api.docgen import generate_contract_docx
+    try:
+        title, docx_bytes = generate_contract_docx(body.description)
+        safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in title)[:50]
+        filename = f"{safe}.docx"
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception as exc:
+        logger.error(f"generate-document error: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# POST /api/correct-document/{id}  — corrige le contrat analysé → .docx
+# ---------------------------------------------------------------------------
+
+@router.post("/correct-document/{analysis_id}")
+async def correct_document(analysis_id: str):
+    """
+    Applique les recommandations de l'analyse sur le contrat et retourne la version corrigée en .docx.
+    """
+    rec = get_analysis(analysis_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Analyse '{analysis_id}' introuvable")
+    if rec["status"] != "done":
+        raise HTTPException(status_code=409, detail=f"Analyse non terminée (status={rec['status']})")
+
+    from api.docgen import correct_contract_docx
+    try:
+        title, docx_bytes = correct_contract_docx(rec)
+        safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in title)[:50]
+        filename = f"{safe}.docx"
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception as exc:
+        logger.error(f"correct-document error: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
