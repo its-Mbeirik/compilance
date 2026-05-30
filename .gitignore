@@ -1,3 +1,6 @@
+# Secrets / local config
+.mcp.json
+
 # Python
 __pycache__/
 *.py[cod]
@@ -53,3 +56,9 @@ model_cache/
 
 # Corpus PDFs (too large for git)
 backend/ingestion/pdfs/
+
+# TestSprite temp files
+testsprite_tests/tmp/
+
+# Claude Code local config
+.claude/

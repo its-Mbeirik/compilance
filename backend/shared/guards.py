@@ -1,10 +1,18 @@
 """
-Garde-fou de citation déterministe (~30 lignes).
+Garde-fou de citation déterministe.
 Rejette toute citation d'article non présent dans l'ensemble récupéré
-et toute citation textuelle non littéralement présente dans l'article cité.
+et toute citation textuelle non présente dans l'article cité.
 Cf. PDF section 3.3.3 Listing 3.
 """
+import re
+import unicodedata
 from typing import Any
+
+
+def _normalize(text: str) -> str:
+    """Normalize unicode + collapse whitespace for robust substring matching."""
+    text = unicodedata.normalize("NFKC", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def citation_guard(
@@ -32,7 +40,11 @@ def citation_guard(
         a for a in retrievals[clause_id]
         if a["id"] == finding["cited_article_id"]
     )
-    if finding["quoted_text"] not in article["text"]:
+
+    quoted = _normalize(finding["quoted_text"])
+    article_text = _normalize(article["text"])
+
+    if quoted not in article_text:
         return False, "Citation textuelle non trouvée littéralement dans l'article"
 
     return True, "OK"

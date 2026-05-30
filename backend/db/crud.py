@@ -100,7 +100,9 @@ def list_analyses(limit: int = 50) -> list[dict]:
             rows = cur.fetchall()
     return [
         {
-            "id": str(r[0]), "status": r[1],
+            "id": str(r[0]),
+            "analysis_id": str(r[0]),
+            "status": r[1],
             "created_at": r[2].isoformat() if r[2] else None,
             "finished_at": r[3].isoformat() if r[3] else None,
             "jurisdiction": r[4], "doc_type": r[5],

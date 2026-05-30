@@ -470,30 +470,43 @@ export default function Home() {
   };
 
   // ── keyword detection ────────────────────────────────────────────────────
-  // Only trigger if the message is a DIRECT COMMAND, not a question about generating.
+  // Strip diacritics for accent-insensitive matching (é/è/ê → e, etc.)
+  const stripAccents = (s: string) =>
+    s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+
+  // Block only clearly informational questions (no "?" — polite requests like
+  // "Pouvez-vous générer...?" must reach generate/correct, not the chat LLM)
   const isQuestion = (msg: string) => {
-    const lower = msg.toLowerCase();
-    const questionMarkers = [
-      "donne moi", "donnez moi", "dis moi", "qu'est", "comment", "que faut",
-      "quels", "quelles", "combien", "explique", "expliquer", "informations",
-      "renseignements", "pour me", "pour générer", "pour generer", "pour rédiger",
-      "pour rediger", "pour créer", "?",
+    const n = stripAccents(msg);
+    const infoMarkers = [
+      "comment", "qu'est", "que faut", "quels", "quelles", "combien",
+      "explique", "expliquer", "informations", "renseignements",
+      "donne moi", "donnez moi", "dis moi",
+      "pour me", "pour generer", "pour rediger", "pour creer",
     ];
-    return questionMarkers.some((w) => lower.includes(w));
+    return infoMarkers.some((w) => n.includes(w));
   };
 
   const isCorrectRequest = (msg: string) => {
     if (isQuestion(msg)) return false;
-    const kw = ["corrige", "corriger", "améliore", "rectifie", "version corrigée", "mise en conformité", "mettre en conformité", "corriger ce contrat"];
-    return !!analysisId && kw.some((k) => msg.toLowerCase().includes(k));
+    const n = stripAccents(msg);
+    const kw = ["corrige", "corriger", "corrigez", "ameliore", "rectifie",
+                "version corrigee", "mise en conformite", "mettre en conformite"];
+    return !!analysisId && kw.some((k) => n.includes(k));
   };
 
   const isGenerateRequest = (msg: string) => {
     if (isQuestion(msg)) return false;
-    // Must start with or be a direct imperative command
-    const lower = msg.toLowerCase().trim();
-    const imperatives = ["génère", "genere", "génerer", "rédige", "redige", "rédiger", "crée un contrat", "cree un contrat", "rédige un contrat", "redige un contrat"];
-    return imperatives.some((k) => lower.startsWith(k) || lower.includes(k));
+    const n = stripAccents(msg);
+    // Direct generation verbs — match anywhere in message
+    const directVerbs = ["genere", "generez", "generer", "redige", "redigez", "rediger"];
+    if (directVerbs.some((v) => n.includes(v))) return true;
+    // Action verb + document type combinations
+    const actionVerbs = ["cree", "creez", "creer", "fais", "faites", "faire",
+                         "etablis", "etablissez", "etablir", "prepare", "preparez",
+                         "preparer", "produis", "produire", "ecris", "ecrivez"];
+    const docTypes = ["contrat", "cdi", "cdd", "convention"];
+    return actionVerbs.some((v) => n.includes(v)) && docTypes.some((d) => n.includes(d));
   };
 
   // ── send chat ─────────────────────────────────────────────────────────────
@@ -509,8 +522,9 @@ export default function Home() {
       if (isCorrectRequest(msg)) {
         const res = await fetch(`/api/correct-document/${analysisId}`, { method: "POST" });
         if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.detail ?? "Erreur serveur");
+          let detail = "Erreur lors de la correction";
+          try { detail = (await res.json()).detail ?? detail; } catch { /* non-JSON body */ }
+          throw new Error(detail);
         }
         const blob = await res.blob();
         const disposition = res.headers.get("Content-Disposition") ?? "";
@@ -531,8 +545,9 @@ export default function Home() {
           body: JSON.stringify({ description: msg }),
         });
         if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.detail ?? "Erreur serveur");
+          let detail = "Erreur lors de la génération";
+          try { detail = (await res.json()).detail ?? detail; } catch { /* non-JSON body */ }
+          throw new Error(detail);
         }
         const blob = await res.blob();
         const disposition = res.headers.get("Content-Disposition") ?? "";
