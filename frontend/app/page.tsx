@@ -360,10 +360,62 @@ export default function Home() {
     if (user.status !== "approved") { router.replace("/pending"); return; }
   }, [user, loading, router]);
 
-  const fileRef   = useRef<HTMLInputElement>(null);
-  const textRef   = useRef<HTMLTextAreaElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const pollRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileRef        = useRef<HTMLInputElement>(null);
+  const textRef        = useRef<HTMLTextAreaElement>(null);
+  const bottomRef      = useRef<HTMLDivElement>(null);
+  const pollRef        = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recognitionRef = useRef<any>(null);
+
+  const [isListening,    setIsListening]    = useState(false);
+  const [speakingIndex,  setSpeakingIndex]  = useState<number | null>(null);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+
+  useEffect(() => {
+    setVoiceSupported(
+      typeof window !== "undefined" &&
+      !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+    );
+    return () => { window.speechSynthesis?.cancel(); };
+  }, []);
+
+  const toggleVoice = useCallback(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+    if (isListening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const rec = new SR();
+    rec.lang = "fr-FR";
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.onresult = (e: any) => {
+      const transcript: string = e.results[0][0].transcript;
+      setText((prev) => prev ? `${prev} ${transcript}` : transcript);
+    };
+    rec.onend  = () => setIsListening(false);
+    rec.onerror = () => setIsListening(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setIsListening(true);
+  }, [isListening]);
+
+  const speak = useCallback((text: string, idx: number) => {
+    if (!window.speechSynthesis) return;
+    if (speakingIndex === idx) {
+      window.speechSynthesis.cancel();
+      setSpeakingIndex(null);
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.lang = "fr-FR";
+    utt.rate = 1.0;
+    utt.onend = () => setSpeakingIndex(null);
+    utt.onerror = () => setSpeakingIndex(null);
+    setSpeakingIndex(idx);
+    window.speechSynthesis.speak(utt);
+  }, [speakingIndex]);
 
   // Fetch conversation history
   const refreshHistory = useCallback(async () => {
@@ -722,11 +774,32 @@ export default function Home() {
               );
 
               if (m.kind === "bot") return (
-                <div key={i} className="flex items-start gap-3">
+                <div key={i} className="flex items-start gap-3 group">
                   <BotAvatar />
                   <div className="max-w-[82%] bg-neutral-50 text-neutral-900 text-sm px-4 py-3 rounded-2xl rounded-tl-sm border border-neutral-100 leading-relaxed whitespace-pre-wrap">
                     {m.text}
                   </div>
+                  <button
+                    onClick={() => speak(m.text, i)}
+                    title={speakingIndex === i ? "Arrêter" : "Écouter"}
+                    className={`opacity-0 group-hover:opacity-100 mt-1 w-7 h-7 flex items-center justify-center rounded-lg transition-all shrink-0 ${
+                      speakingIndex === i
+                        ? "bg-black text-white"
+                        : "text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100"
+                    }`}
+                  >
+                    {speakingIndex === i ? (
+                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                        <rect x="6" y="4" width="4" height="16" rx="1"/>
+                        <rect x="14" y="4" width="4" height="16" rx="1"/>
+                      </svg>
+                    ) : (
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072M12 6v12m0 0l-3-3m3 3l3-3M9.172 9.172a4 4 0 000 5.656"/>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5a7 7 0 010 14"/>
+                      </svg>
+                    )}
+                  </button>
                 </div>
               );
 
@@ -820,10 +893,30 @@ export default function Home() {
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={placeholder}
+                  placeholder={isListening ? "Écoute en cours…" : placeholder}
                   disabled={busy}
                   className="flex-1 bg-transparent resize-none outline-none text-sm text-neutral-900 placeholder:text-neutral-400 py-1.5 leading-relaxed disabled:cursor-not-allowed max-h-40"
                 />
+
+                {voiceSupported && (
+                  <button
+                    onClick={toggleVoice}
+                    disabled={busy}
+                    title={isListening ? "Arrêter l'écoute" : "Dicter un message"}
+                    className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors shrink-0 ${
+                      isListening
+                        ? "bg-red-500 text-white animate-pulse"
+                        : "text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 disabled:opacity-30"
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 1a3 3 0 013 3v8a3 3 0 01-6 0V4a3 3 0 013-3z"/>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 10a7 7 0 01-14 0"/>
+                      <line x1="12" y1="19" x2="12" y2="23"/>
+                      <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
+                  </button>
+                )}
 
                 <button
                   onClick={handleSend}
