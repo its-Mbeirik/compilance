@@ -40,8 +40,11 @@ CREATE TABLE IF NOT EXISTS contracts (
     doc_type     TEXT NOT NULL,                 -- "contrat_travail"
     source_path  TEXT NOT NULL,                 -- chemin fichier uploadé
     jurisdiction TEXT,                          -- "mauritania_labor"
+    user_id      UUID REFERENCES users(id) ON DELETE SET NULL,
     uploaded_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS contracts_user_idx ON contracts (user_id);
 
 -- -----------------------------------------------------------------------
 -- Table : utilisateurs (admin, user, sub_user)

@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from typing import Optional  # noqa: F401 (kept for future use)
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
@@ -28,6 +28,7 @@ from db.crud import (
     update_analysis_error,
     update_analysis_running,
 )
+from shared.auth import require_approved
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -85,6 +86,7 @@ async def submit_analysis(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     jurisdiction: str = Form("auto"),
+    current: dict = Depends(require_approved),
 ):
     """
     Soumet un contrat (PDF/DOCX/TXT) pour analyse.
@@ -112,7 +114,7 @@ async def submit_analysis(
 
     # Sauvegarde le fichier
     doc_type = "contrat_travail"
-    contract_id = create_contract(doc_type, str(UPLOAD_DIR / (file.filename or "upload")), jurisdiction)
+    contract_id = create_contract(doc_type, str(UPLOAD_DIR / (file.filename or "upload")), jurisdiction, user_id=current["sub"])
     analysis_id = create_analysis(contract_id)
 
     save_path = UPLOAD_DIR / f"{analysis_id}{ext}"
@@ -128,9 +130,9 @@ async def submit_analysis(
 # ---------------------------------------------------------------------------
 
 @router.get("/analyses")
-async def get_analyses():
-    """Liste les 50 dernières analyses."""
-    return list_analyses(limit=50)
+async def get_analyses(current: dict = Depends(require_approved)):
+    """Liste les analyses visibles par l'utilisateur connecté."""
+    return list_analyses(limit=50, user_id=current["sub"], user_role=current["role"])
 
 
 # ---------------------------------------------------------------------------
@@ -138,9 +140,9 @@ async def get_analyses():
 # ---------------------------------------------------------------------------
 
 @router.get("/analyses/{analysis_id}")
-async def get_analysis_status(analysis_id: str):
+async def get_analysis_status(analysis_id: str, current: dict = Depends(require_approved)):
     """Retourne le statut et les findings d'une analyse."""
-    rec = get_analysis(analysis_id)
+    rec = get_analysis(analysis_id, user_id=current["sub"], user_role=current["role"])
     if not rec:
         raise HTTPException(status_code=404, detail=f"Analyse '{analysis_id}' introuvable")
     return rec
@@ -151,13 +153,13 @@ async def get_analysis_status(analysis_id: str):
 # ---------------------------------------------------------------------------
 
 @router.get("/analyses/{analysis_id}/report")
-async def get_report(analysis_id: str, fmt: str = "pdf"):
+async def get_report(analysis_id: str, fmt: str = "pdf", current: dict = Depends(require_approved)):
     """
     Génère et retourne le rapport de conformité.
     ?fmt=pdf  → PDF (défaut)
     ?fmt=html → HTML
     """
-    rec = get_analysis(analysis_id)
+    rec = get_analysis(analysis_id, user_id=current["sub"], user_role=current["role"])
     if not rec:
         raise HTTPException(status_code=404, detail=f"Analyse '{analysis_id}' introuvable")
     if rec["status"] != "done":
@@ -193,7 +195,7 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/chat")
-async def general_chat(body: ChatRequest):
+async def general_chat(body: ChatRequest, _: dict = Depends(require_approved)):
     """
     Q&A juridique générale sans document.
     Répond aux questions sur le droit du travail mauritanien et le COC.
@@ -203,12 +205,12 @@ async def general_chat(body: ChatRequest):
 
 
 @router.post("/chat/{analysis_id}")
-async def chat(analysis_id: str, body: ChatRequest):
+async def chat(analysis_id: str, body: ChatRequest, current: dict = Depends(require_approved)):
     """
     Q&A contextuelle sur une analyse terminée.
     Utilise les findings + articles récupérés comme contexte.
     """
-    rec = get_analysis(analysis_id)
+    rec = get_analysis(analysis_id, user_id=current["sub"], user_role=current["role"])
     if not rec:
         raise HTTPException(status_code=404, detail=f"Analyse '{analysis_id}' introuvable")
     if rec["status"] not in ("done", "error"):
@@ -294,7 +296,7 @@ class GenerateDocRequest(BaseModel):
 
 
 @router.post("/generate-document")
-async def generate_document(body: GenerateDocRequest):
+async def generate_document(body: GenerateDocRequest, _: dict = Depends(require_approved)):
     """
     Génère un contrat complet conforme au droit mauritanien et le retourne en .docx.
     """
@@ -318,11 +320,11 @@ async def generate_document(body: GenerateDocRequest):
 # ---------------------------------------------------------------------------
 
 @router.post("/correct-document/{analysis_id}")
-async def correct_document(analysis_id: str):
+async def correct_document(analysis_id: str, current: dict = Depends(require_approved)):
     """
     Applique les recommandations de l'analyse sur le contrat et retourne la version corrigée en .docx.
     """
-    rec = get_analysis(analysis_id)
+    rec = get_analysis(analysis_id, user_id=current["sub"], user_role=current["role"])
     if not rec:
         raise HTTPException(status_code=404, detail=f"Analyse '{analysis_id}' introuvable")
     if rec["status"] != "done":
