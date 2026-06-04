@@ -65,6 +65,7 @@ def build_pipeline(use_postgres: bool = False):
 def run_pipeline(
     contract_text: str,
     jurisdiction: str,
+    language: str = "fr",
     contract_id: Optional[str] = None,
     use_postgres: bool = False,
 ) -> dict[str, Any]:
@@ -86,14 +87,15 @@ def run_pipeline(
     pipeline = build_pipeline(use_postgres=use_postgres)
 
     initial_state: AgentState = {
-        "contract_id": contract_id,
+        "contract_id":   contract_id,
         "contract_text": contract_text,
-        "jurisdiction": jurisdiction,
-        "extracted": {},
-        "clauses": [],
-        "retrievals": {},
-        "findings": [],
-        "errors": [],
+        "jurisdiction":  jurisdiction,
+        "language":      language if language in ("fr", "ar") else "fr",
+        "extracted":     {},
+        "clauses":       [],
+        "retrievals":    {},
+        "findings":      [],
+        "errors":        [],
     }
 
     config = {"configurable": {"thread_id": contract_id}}

@@ -109,6 +109,7 @@ class AgentState(TypedDict):
     contract_id:   str
     contract_text: str
     jurisdiction:  Literal["mauritania_labor"]
+    language:      Literal["fr", "ar"]                 # response language
     extracted:     dict                                # ContratsExtraction.model_dump()
     clauses:       list                                # list[Clause]
     retrievals:    dict                                # {clause_id: list[Article]}

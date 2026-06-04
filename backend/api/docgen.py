@@ -130,14 +130,8 @@ def _llm():
 
 # ── Public API ─────────────────────────────────────────────────────────────
 
-def generate_contract_docx(description: str) -> tuple[str, bytes]:
-    """
-    Génère un contrat complet conforme au droit mauritanien.
-    Retourne (titre, docx_bytes).
-    """
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    system = (
+_GENERATE_SYSTEM = {
+    "fr": (
         "Tu es un expert juridique spécialisé en droit mauritanien (Code du Travail Loi N° 2004-017, "
         "Code des Obligations et des Contrats, Convention Collective Générale du Travail). "
         "Génère un contrat complet, structuré et conforme à la législation mauritanienne en vigueur. "
@@ -145,52 +139,93 @@ def generate_contract_docx(description: str) -> tuple[str, bytes]:
         "et ### pour les sous-titres. Numérote chaque clause sous la forme 'Article N — texte'. "
         "Inclus toutes les mentions légales obligatoires. Réponds uniquement avec le texte du contrat, "
         "sans introduction ni commentaire."
-    )
-    prompt = f"Génère le contrat suivant : {description}"
+    ),
+    "ar": (
+        "أنت خبير قانوني متخصص في القانون الموريتاني (قانون العمل رقم 2004-017، "
+        "ومدونة الالتزامات والعقود، والاتفاقية الجماعية العامة للعمل). "
+        "أنشئ عقداً كاملاً ومنظَّماً ومتوافقاً مع التشريعات الموريتانية النافذة. "
+        "نظِّم الوثيقة بأقسام واضحة مُعلَّمة بـ ## للعناوين الرئيسية و### للعناوين الفرعية. "
+        "رقِّم كل بند على الشكل 'المادة N — النص'. "
+        "أدرج جميع البيانات القانونية الإلزامية. أجب بنص العقد فقط دون مقدمة أو تعليق."
+    ),
+}
 
-    resp = _llm().invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
-    content = resp.content
-
-    # Extract a title from the first non-empty line or use description
-    first_line = next((l.strip().lstrip("#").strip() for l in content.splitlines() if l.strip()), description)
-    title = first_line if len(first_line) < 80 else description[:80]
-
-    return title, _build_docx(title, content)
-
-
-def correct_contract_docx(analysis_rec: dict) -> tuple[str, bytes]:
-    """
-    Génère une version corrigée du contrat en appliquant les recommandations des findings.
-    Retourne (titre, docx_bytes).
-    """
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    findings = analysis_rec.get("findings", [])
-    extracted = analysis_rec.get("extracted", {})
-
-    findings_text = "\n".join(
-        f"- Clause {f.get('clause_id')} | {f.get('verdict')} | "
-        f"Art. {f.get('cited_article_id')} | Recommandation: {f.get('recommendation', '')}"
-        for f in findings
-    )
-
-    system = (
+_CORRECT_SYSTEM = {
+    "fr": (
         "Tu es un expert juridique spécialisé en droit mauritanien. "
         "Corrige le contrat en appliquant toutes les recommandations listées. "
         "Génère le contrat corrigé complet, structuré avec ## pour les titres et "
         "'Article N — texte' pour les clauses. "
         "Ne fournis que le texte du contrat corrigé, sans explication."
-    )
-    prompt = (
-        f"Données extraites du contrat original :\n{extracted}\n\n"
-        f"Problèmes détectés (à corriger) :\n{findings_text}\n\n"
-        "Génère la version corrigée et conforme au droit mauritanien."
-    )
+    ),
+    "ar": (
+        "أنت خبير قانوني متخصص في القانون الموريتاني. "
+        "صحِّح العقد بتطبيق جميع التوصيات المدرجة. "
+        "أنشئ النسخة المصحَّحة الكاملة منظَّمةً بـ ## للعناوين و'المادة N — النص' للبنود. "
+        "أجب بنص العقد المصحَّح فقط دون شرح."
+    ),
+}
 
-    resp = _llm().invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
+
+def generate_contract_docx(description: str, language: str = "fr") -> tuple[str, bytes]:
+    """
+    Génère un contrat complet conforme au droit mauritanien.
+    Retourne (titre, docx_bytes).
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+    lang = language if language in _GENERATE_SYSTEM else "fr"
+    prompt_prefix = "أنشئ العقد التالي" if lang == "ar" else "Génère le contrat suivant"
+
+    resp = _llm().invoke([
+        SystemMessage(content=_GENERATE_SYSTEM[lang]),
+        HumanMessage(content=f"{prompt_prefix} : {description}"),
+    ])
     content = resp.content
 
-    first_line = next((l.strip().lstrip("#").strip() for l in content.splitlines() if l.strip()), "Contrat corrigé")
-    title = f"Contrat corrigé — {first_line[:60]}"
+    first_line = next((l.strip().lstrip("#").strip() for l in content.splitlines() if l.strip()), description)
+    title = first_line if len(first_line) < 80 else description[:80]
+    return title, _build_docx(title, content)
 
+
+def correct_contract_docx(analysis_rec: dict, language: str = "fr") -> tuple[str, bytes]:
+    """
+    Génère une version corrigée du contrat en appliquant les recommandations des findings.
+    Retourne (titre, docx_bytes).
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+    lang = language if language in _CORRECT_SYSTEM else "fr"
+
+    findings  = analysis_rec.get("findings", [])
+    extracted = analysis_rec.get("extracted", {})
+
+    findings_text = "\n".join(
+        f"- Clause {f.get('clause_id')} | {f.get('verdict')} | "
+        f"Art. {f.get('cited_article_id')} | {f.get('recommendation', '')}"
+        for f in findings
+    )
+
+    if lang == "ar":
+        prompt = (
+            f"البيانات المستخرجة من العقد الأصلي:\n{extracted}\n\n"
+            f"المشكلات المكتشفة (يجب تصحيحها):\n{findings_text}\n\n"
+            "أنشئ النسخة المصحَّحة المتوافقة مع القانون الموريتاني."
+        )
+        default_title = "عقد مُصحَّح"
+    else:
+        prompt = (
+            f"Données extraites du contrat original :\n{extracted}\n\n"
+            f"Problèmes détectés (à corriger) :\n{findings_text}\n\n"
+            "Génère la version corrigée et conforme au droit mauritanien."
+        )
+        default_title = "Contrat corrigé"
+
+    resp = _llm().invoke([
+        SystemMessage(content=_CORRECT_SYSTEM[lang]),
+        HumanMessage(content=prompt),
+    ])
+    content = resp.content
+
+    first_line = next((l.strip().lstrip("#").strip() for l in content.splitlines() if l.strip()), default_title)
+    sep = " — " if lang == "fr" else " — "
+    title = f"{default_title}{sep}{first_line[:60]}"
     return title, _build_docx(title, content)

@@ -2,6 +2,7 @@
 Jalon 3 — Nœud Extracteur.
 Appelle le LLM (structured output) pour extraire les données contractuelles
 et génère les clauses de conformité à vérifier.
+Supporte le français et l'arabe.
 """
 import logging
 import os
@@ -20,18 +21,37 @@ from shared.schemas import (
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_LABOR = """Tu es un expert en droit du travail mauritanien \
+# ── French prompts ─────────────────────────────────────────────────────────────
+
+_SYSTEM_LABOR_FR = """\
+Tu es un expert en droit du travail mauritanien \
 (Code du Travail, Loi n° 2004-017 modifiée par Loi 2009-027).
 
 Analyse le contrat de travail fourni et extrais avec précision toutes les informations structurées.
 Pour la liste 'clauses', génère une entrée par point de conformité important, \
 avec le texte EXACT tel qu'il apparaît dans le document."""
 
-_FEW_SHOT_LABOR = """\
+_FEW_SHOT_FR = """\
 Exemple — CDD :
 "M. Ba est engagé comme Développeur pour 6 mois. Période d'essai : 2 mois. \
 Salaire : 180 000 FCFA/mois."
 → type_contrat="CDD", duree_mois=6, periode_essai_mois=2, salaire_mensuel_fcfa=180000
+"""
+
+# ── Arabic prompts ─────────────────────────────────────────────────────────────
+
+_SYSTEM_LABOR_AR = """\
+أنت خبير في قانون العمل الموريتاني \
+(قانون العمل، القانون رقم 2004-017 المعدَّل بالقانون 2009-027).
+
+حلِّل عقد العمل المقدَّم واستخرج جميع المعلومات المنظَّمة بدقة.
+لقائمة 'clauses'، أنشئ مدخلاً لكل نقطة امتثال مهمة، \
+مع النص الحرفي كما يظهر في الوثيقة."""
+
+_FEW_SHOT_AR = """\
+مثال — عقد محدد المدة:
+"يُعيَّن السيد با بوصف مطوّر ويب لمدة 6 أشهر. فترة التجربة: شهران. الراتب: 180,000 فرنك أفريقي شهرياً."
+→ type_contrat="CDD"، duree_mois=6، periode_essai_mois=2، salaire_mensuel_fcfa=180000
 """
 
 
@@ -67,20 +87,11 @@ def _generate_clauses(extracted: dict, jurisdiction: str) -> list[dict]:
 
     if periode is not None:
         label = "cadre" if est_cadre else "travailleur"
-        _add(
-            ClauseType.PERIODE_ESSAI,
-            f"période d'essai {label} {periode} mois",
-        )
+        _add(ClauseType.PERIODE_ESSAI, f"période d'essai {label} {periode} mois")
     if type_c == "CDD":
-        _add(
-            ClauseType.DUREE_CDD,
-            f"CDD durée {duree_mois or '?'} mois visa inspection travail",
-        )
+        _add(ClauseType.DUREE_CDD, f"CDD durée {duree_mois or '?'} mois visa inspection travail")
     if age is not None:
-        _add(
-            ClauseType.AGE_MINIMUM,
-            f"âge minimum travail employe {age} ans",
-        )
+        _add(ClauseType.AGE_MINIMUM, f"âge minimum travail employe {age} ans")
 
     return clauses
 
@@ -88,6 +99,10 @@ def _generate_clauses(extracted: dict, jurisdiction: str) -> list[dict]:
 def extractor_node(state: AgentState) -> dict[str, Any]:
     """Nœud Extracteur : texte contrat → extraction structurée + clauses de conformité."""
     contract_text = state["contract_text"]
+    language      = state.get("language", "fr")
+
+    system_msg = _SYSTEM_LABOR_AR if language == "ar" else _SYSTEM_LABOR_FR
+    few_shot   = _FEW_SHOT_AR     if language == "ar" else _FEW_SHOT_FR
 
     llm = ChatOpenAI(
         model=os.getenv("LLM_MODEL", "deepseek-chat"),
@@ -98,21 +113,23 @@ def extractor_node(state: AgentState) -> dict[str, Any]:
     ).with_structured_output(ContratsExtraction, method="function_calling", include_raw=False)
 
     prompt = (
-        f"{_FEW_SHOT_LABOR}\n\n---\n\n"
-        f"Document à analyser :\n\n{contract_text[:8000]}"
+        f"{few_shot}\n\n---\n\n"
+        f"{'الوثيقة المراد تحليلها' if language == 'ar' else 'Document à analyser'} :\n\n"
+        f"{contract_text[:8000]}"
     )
 
     try:
         extraction = llm.invoke([
-            SystemMessage(content=_SYSTEM_LABOR),
+            SystemMessage(content=system_msg),
             HumanMessage(content=prompt),
         ])
         extracted_dict = extraction.model_dump()
         clauses = _generate_clauses(extracted_dict, "mauritania_labor")
         logger.info(
-            "Extraction réussie: %d clauses (%s)",
+            "Extraction réussie: %d clauses (%s, lang=%s)",
             len(clauses),
             extracted_dict.get("type_contrat", "?"),
+            language,
         )
         return {"extracted": extracted_dict, "clauses": clauses}
     except Exception as exc:

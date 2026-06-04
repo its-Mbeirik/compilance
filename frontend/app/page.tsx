@@ -332,9 +332,15 @@ function Sidebar({
 
 // ── Main page ──────────────────────────────────────────────────────────────
 
-const WELCOME: Msg = {
-  kind: "bot",
-  text: "Bonjour ! Posez-moi vos questions sur le droit du travail mauritanien, le Code des Obligations et des Contrats, ou la Convention Collective.\n\nVous pouvez aussi joindre un contrat (PDF, DOCX, TXT) pour une analyse de conformité complète.",
+const WELCOME: Record<"fr" | "ar", Msg> = {
+  fr: {
+    kind: "bot",
+    text: "Bonjour ! Posez-moi vos questions sur le droit du travail mauritanien, le Code des Obligations et des Contrats, ou la Convention Collective.\n\nVous pouvez aussi joindre un contrat (PDF, DOCX, TXT) pour une analyse de conformité complète.",
+  },
+  ar: {
+    kind: "bot",
+    text: "مرحباً! يمكنكم طرح أسئلتكم حول قانون العمل الموريتاني، ومدونة الالتزامات والعقود، أو الاتفاقية الجماعية العامة للعمل.\n\nكما يمكنكم إرفاق عقد (PDF أو DOCX أو TXT) لتحليل مدى امتثاله للتشريعات.",
+  },
 };
 
 export default function Home() {
@@ -342,7 +348,7 @@ export default function Home() {
   const apiFetch = useApiFetch();
   const router = useRouter();
 
-  const [messages, setMessages]   = useState<Msg[]>([WELCOME]);
+  const [messages, setMessages]   = useState<Msg[]>([WELCOME["fr"]]);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [analysis, setAnalysis]   = useState<Analysis | null>(null);
   const [file, setFile]           = useState<File | null>(null);
@@ -369,6 +375,7 @@ export default function Home() {
   const [isListening,    setIsListening]    = useState(false);
   const [speakingIndex,  setSpeakingIndex]  = useState<number | null>(null);
   const [voiceSupported, setVoiceSupported] = useState(false);
+  const [lang,           setLang]           = useState<"fr" | "ar">("fr");
 
   useEffect(() => {
     setVoiceSupported(
@@ -386,7 +393,7 @@ export default function Home() {
       return;
     }
     const rec = new SR();
-    rec.lang = "fr-FR";
+    rec.lang = lang === "ar" ? "ar-SA" : "fr-FR";
     rec.continuous = false;
     rec.interimResults = false;
     rec.onresult = (e: any) => {
@@ -409,7 +416,7 @@ export default function Home() {
     }
     window.speechSynthesis.cancel();
     const utt = new SpeechSynthesisUtterance(text);
-    utt.lang = "fr-FR";
+    utt.lang = lang === "ar" ? "ar-SA" : "fr-FR";
     utt.rate = 1.0;
     utt.onend = () => setSpeakingIndex(null);
     utt.onerror = () => setSpeakingIndex(null);
@@ -478,7 +485,7 @@ export default function Home() {
     setAnalysisId(item.analysis_id);
 
     setMessages([
-      WELCOME,
+      WELCOME[lang],
       { kind: "user", text: `📄 ${item.doc_type}` },
     ]);
 
@@ -489,31 +496,31 @@ export default function Home() {
 
       if (data.status === "done") {
         setMessages([
-          WELCOME,
+          WELCOME[lang],
           { kind: "user", text: `📄 ${item.doc_type}` },
           { kind: "result", analysis: data },
-          { kind: "bot", text: "Analyse chargée. Posez-moi vos questions sur ces résultats." },
+          { kind: "bot", text: lang === "ar" ? "تم تحميل التحليل. يمكنكم طرح أسئلتكم." : "Analyse chargée. Posez-moi vos questions sur ces résultats." },
         ]);
       } else if (data.status === "error") {
         setMessages([
-          WELCOME,
+          WELCOME[lang],
           { kind: "user", text: `📄 ${item.doc_type}` },
-          { kind: "error", text: `Erreur : ${data.error_log ?? "inconnue"}` },
+          { kind: "error", text: `${lang === "ar" ? "خطأ" : "Erreur"} : ${data.error_log ?? (lang === "ar" ? "غير معروف" : "inconnue")}` },
         ]);
       } else {
         setMessages([
-          WELCOME,
+          WELCOME[lang],
           { kind: "user", text: `📄 ${item.doc_type}` },
-          { kind: "bot", text: "Analyse en cours…" },
+          { kind: "bot", text: lang === "ar" ? "جارٍ تحليل العقد…" : "Analyse en cours…" },
           { kind: "thinking" },
         ]);
         setBusy(true);
         poll(item.analysis_id);
       }
     } catch {
-      setMessages((prev) => [...prev, { kind: "error", text: "Impossible de charger l'analyse." }]);
+      setMessages((prev) => [...prev, { kind: "error", text: lang === "ar" ? "تعذّر تحميل التحليل." : "Impossible de charger l'analyse." }]);
     }
-  }, [poll, apiFetch]);
+  }, [poll, apiFetch, lang]);
 
   // ── reset ─────────────────────────────────────────────────────────────────
   const reset = useCallback(() => {
@@ -523,8 +530,8 @@ export default function Home() {
     setFile(null);
     setText("");
     setBusy(false);
-    setMessages([WELCOME]);
-  }, []);
+    setMessages([WELCOME[lang]]);
+  }, [lang]);
 
   // ── submit file ───────────────────────────────────────────────────────────
   const submitFile = async () => {
@@ -542,6 +549,7 @@ export default function Home() {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("jurisdiction", "mauritania_labor");
+      fd.append("language", lang);
       const res  = await apiFetch("/api/analyses", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail ?? "Erreur serveur");
@@ -613,7 +621,10 @@ export default function Home() {
     try {
       // ── Correction request ───────────────────────────────────────────────
       if (isCorrectRequest(msg)) {
-        const res = await apiFetch(`/api/correct-document/${analysisId}`, { method: "POST" });
+        const res = await apiFetch(`/api/correct-document/${analysisId}`, { method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ language: lang }),
+        });
         if (!res.ok) {
           let detail = "Erreur lors de la correction";
           try { detail = (await res.json()).detail ?? detail; } catch { /* non-JSON body */ }
@@ -635,7 +646,7 @@ export default function Home() {
         const res = await apiFetch("/api/generate-document", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ description: msg }),
+          body: JSON.stringify({ description: msg, language: lang }),
         });
         if (!res.ok) {
           let detail = "Erreur lors de la génération";
@@ -659,7 +670,7 @@ export default function Home() {
         const res  = await apiFetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: msg }),
+          body: JSON.stringify({ message: msg, language: lang }),
         });
         const data = await res.json();
         const answer = res.ok ? data.answer : (data.detail ?? "Erreur serveur");
@@ -696,7 +707,11 @@ export default function Home() {
   };
 
   const canSend     = !busy && (!!file || !!text.trim());
-  const placeholder = busy ? "Réflexion en cours…" : "Message…";
+  const placeholder = isListening
+    ? (lang === "ar" ? "جارٍ الاستماع…" : "Écoute en cours…")
+    : busy
+    ? (lang === "ar" ? "جارٍ المعالجة…" : "Réflexion en cours…")
+    : (lang === "ar" ? "اكتب رسالتك…" : "Message…");
 
   // Wait for auth before rendering (redirects are handled in useEffect)
   if (loading || !user) return null;
@@ -751,12 +766,23 @@ export default function Home() {
             )}
           </div>
 
+          {/* Language toggle */}
+          <button
+            onClick={() => setLang(l => l === "fr" ? "ar" : "fr")}
+            title={lang === "fr" ? "Passer en arabe" : "التبديل إلى الفرنسية"}
+            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-colors shrink-0 text-neutral-600"
+          >
+            <span>{lang === "fr" ? "🇫🇷 FR" : "🇲🇷 AR"}</span>
+            <span className="text-neutral-300">→</span>
+            <span>{lang === "fr" ? "AR" : "FR"}</span>
+          </button>
+
           {analysisId && (
             <button
               onClick={reset}
               className="text-xs text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 px-3 py-1.5 rounded-lg transition-colors font-medium shrink-0"
             >
-              + Nouveau
+              {lang === "ar" ? "+ جديد" : "+ Nouveau"}
             </button>
           )}
         </header>
@@ -767,7 +793,7 @@ export default function Home() {
             {messages.map((m, i) => {
               if (m.kind === "user") return (
                 <div key={i} className="flex justify-end">
-                  <div className="max-w-[78%] bg-[#111] text-white text-sm px-4 py-3 rounded-2xl rounded-br-sm leading-relaxed whitespace-pre-wrap">
+                  <div dir="auto" className="max-w-[78%] bg-[#111] text-white text-sm px-4 py-3 rounded-2xl rounded-br-sm leading-relaxed whitespace-pre-wrap">
                     {m.text}
                   </div>
                 </div>
@@ -776,7 +802,7 @@ export default function Home() {
               if (m.kind === "bot") return (
                 <div key={i} className="flex items-start gap-3 group">
                   <BotAvatar />
-                  <div className="max-w-[82%] bg-neutral-50 text-neutral-900 text-sm px-4 py-3 rounded-2xl rounded-tl-sm border border-neutral-100 leading-relaxed whitespace-pre-wrap">
+                  <div dir="auto" className="max-w-[82%] bg-neutral-50 text-neutral-900 text-sm px-4 py-3 rounded-2xl rounded-tl-sm border border-neutral-100 leading-relaxed whitespace-pre-wrap">
                     {m.text}
                   </div>
                   <button
@@ -893,7 +919,7 @@ export default function Home() {
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={isListening ? "Écoute en cours…" : placeholder}
+                  placeholder={placeholder}
                   disabled={busy}
                   className="flex-1 bg-transparent resize-none outline-none text-sm text-neutral-900 placeholder:text-neutral-400 py-1.5 leading-relaxed disabled:cursor-not-allowed max-h-40"
                 />

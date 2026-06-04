@@ -43,7 +43,7 @@ ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt"}
 # Background task — exécute le pipeline LangGraph
 # ---------------------------------------------------------------------------
 
-def _run_pipeline_bg(analysis_id: str, contract_text: str, jurisdiction: str) -> None:
+def _run_pipeline_bg(analysis_id: str, contract_text: str, jurisdiction: str, language: str = "fr") -> None:
     from graph.pipeline import run_pipeline
 
     try:
@@ -51,6 +51,7 @@ def _run_pipeline_bg(analysis_id: str, contract_text: str, jurisdiction: str) ->
         result = run_pipeline(
             contract_text=contract_text,
             jurisdiction=jurisdiction,
+            language=language,
             contract_id=analysis_id,
         )
         update_analysis_done(
@@ -86,6 +87,7 @@ async def submit_analysis(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     jurisdiction: str = Form("auto"),
+    language: str = Form("fr"),
     current: dict = Depends(require_approved),
 ):
     """
@@ -120,7 +122,7 @@ async def submit_analysis(
     save_path = UPLOAD_DIR / f"{analysis_id}{ext}"
     save_path.write_bytes(content)
 
-    background_tasks.add_task(_run_pipeline_bg, analysis_id, contract_text, jurisdiction)
+    background_tasks.add_task(_run_pipeline_bg, analysis_id, contract_text, jurisdiction, language)
 
     return {"analysis_id": analysis_id, "status": "pending"}
 
@@ -191,7 +193,8 @@ async def get_report(analysis_id: str, fmt: str = "pdf", current: dict = Depends
 # ---------------------------------------------------------------------------
 
 class ChatRequest(BaseModel):
-    message: str
+    message:  str
+    language: str = "fr"  # "fr" | "ar"
 
 
 @router.post("/chat")
@@ -200,7 +203,7 @@ async def general_chat(body: ChatRequest, _: dict = Depends(require_approved)):
     Q&A juridique générale sans document.
     Répond aux questions sur le droit du travail mauritanien et le COC.
     """
-    answer = _ask_llm_general(body.message)
+    answer = _ask_llm_general(body.message, body.language)
     return {"answer": answer}
 
 
@@ -221,7 +224,7 @@ async def chat(analysis_id: str, body: ChatRequest, current: dict = Depends(requ
     jurisdiction = rec.get("jurisdiction", "")
 
     context = _build_chat_context(findings, extracted, jurisdiction)
-    answer = _ask_llm(body.message, context)
+    answer = _ask_llm(body.message, context, body.language)
 
     return {"answer": answer, "analysis_id": analysis_id}
 
@@ -241,49 +244,70 @@ def _build_chat_context(findings: list, extracted: dict, jurisdiction: str) -> s
     return "\n".join(lines)
 
 
-def _ask_llm_general(question: str) -> str:
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    system = (
+_GENERAL_SYSTEM = {
+    "fr": (
         "Tu es un assistant juridique spécialisé en droit mauritanien : "
         "Code du Travail (Loi N° 2004-017), Code des Obligations et des Contrats "
         "(Ordonnance n° 89-126), et Convention Collective Générale du Travail. "
         "Réponds en français, de façon claire et précise. "
         "Si la question dépasse ton domaine juridique, dis-le poliment. "
         "Pour analyser un contrat spécifique, l'utilisateur peut joindre un document."
-    )
+    ),
+    "ar": (
+        "أنت مساعد قانوني متخصص في القانون الموريتاني: "
+        "قانون العمل (القانون رقم 2004-017)، ومدونة الالتزامات والعقود (المرسوم رقم 89-126)، "
+        "والاتفاقية الجماعية العامة للعمل. "
+        "أجب باللغة العربية بأسلوب واضح ودقيق. "
+        "إذا كان السؤال خارج نطاق تخصصك القانوني، أخبر المستخدم بذلك بأدب. "
+        "لتحليل عقد معين، يمكن للمستخدم إرفاق وثيقة."
+    ),
+}
 
-    llm = ChatOpenAI(
-        model=os.getenv("LLM_MODEL", "deepseek-chat"),
-        api_key=os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_API_BASE", "https://api.deepseek.com"),
-        temperature=0.3,
-        max_tokens=1024,
-    )
-    response = llm.invoke([SystemMessage(content=system), HumanMessage(content=question)])
-    return response.content
-
-
-def _ask_llm(question: str, context: str) -> str:
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    system = (
+_CONTEXTUAL_SYSTEM = {
+    "fr": (
         "Tu es un assistant juridique spécialisé en droit mauritanien : "
         "Code du Travail, Code des Obligations et des Contrats, et Convention Collective Générale du Travail. "
         "Réponds en français, de façon concise et précise, en te basant uniquement sur le contexte fourni."
-    )
-    prompt = f"Contexte de l'analyse :\n{context}\n\nQuestion : {question}"
+    ),
+    "ar": (
+        "أنت مساعد قانوني متخصص في القانون الموريتاني: "
+        "قانون العمل، ومدونة الالتزامات والعقود، والاتفاقية الجماعية العامة للعمل. "
+        "أجب باللغة العربية بإيجاز ودقة، مستنداً فقط إلى السياق المقدَّم."
+    ),
+}
 
-    llm = ChatOpenAI(
+
+def _llm_client(temperature: float = 0.3, max_tokens: int = 1024):
+    from langchain_openai import ChatOpenAI
+    return ChatOpenAI(
         model=os.getenv("LLM_MODEL", "deepseek-chat"),
         api_key=os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY"),
         base_url=os.getenv("OPENAI_API_BASE", "https://api.deepseek.com"),
-        temperature=0.3,
-        max_tokens=1024,
+        temperature=temperature,
+        max_tokens=max_tokens,
     )
-    response = llm.invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
+
+
+def _ask_llm_general(question: str, language: str = "fr") -> str:
+    from langchain_core.messages import HumanMessage, SystemMessage
+    lang = language if language in _GENERAL_SYSTEM else "fr"
+    response = _llm_client().invoke([
+        SystemMessage(content=_GENERAL_SYSTEM[lang]),
+        HumanMessage(content=question),
+    ])
+    return response.content
+
+
+def _ask_llm(question: str, context: str, language: str = "fr") -> str:
+    from langchain_core.messages import HumanMessage, SystemMessage
+    lang = language if language in _CONTEXTUAL_SYSTEM else "fr"
+    label = "السياق" if lang == "ar" else "Contexte de l'analyse"
+    q_label = "السؤال" if lang == "ar" else "Question"
+    prompt = f"{label} :\n{context}\n\n{q_label} : {question}"
+    response = _llm_client().invoke([
+        SystemMessage(content=_CONTEXTUAL_SYSTEM[lang]),
+        HumanMessage(content=prompt),
+    ])
     return response.content
 
 
@@ -293,6 +317,7 @@ def _ask_llm(question: str, context: str) -> str:
 
 class GenerateDocRequest(BaseModel):
     description: str
+    language:    str = "fr"  # "fr" | "ar"
 
 
 @router.post("/generate-document")
@@ -302,7 +327,7 @@ async def generate_document(body: GenerateDocRequest, _: dict = Depends(require_
     """
     from api.docgen import generate_contract_docx
     try:
-        title, docx_bytes = generate_contract_docx(body.description)
+        title, docx_bytes = generate_contract_docx(body.description, body.language)
         safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in title)[:50]
         filename = f"{safe}.docx"
         return Response(
@@ -332,7 +357,7 @@ async def correct_document(analysis_id: str, current: dict = Depends(require_app
 
     from api.docgen import correct_contract_docx
     try:
-        title, docx_bytes = correct_contract_docx(rec)
+        title, docx_bytes = correct_contract_docx(rec, rec.get("language", "fr"))
         safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in title)[:50]
         filename = f"{safe}.docx"
         return Response(

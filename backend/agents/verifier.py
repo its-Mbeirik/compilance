@@ -52,7 +52,7 @@ class _VerifierOutput(BaseModel):
     )
 
 
-_SYSTEM_VERIFIER = """\
+_SYSTEM_VERIFIER_FR = """\
 Tu es un expert en conformité juridique. Tu dois vérifier si une clause contractuelle \
 respecte la réglementation en vigueur.
 
@@ -60,9 +60,23 @@ Règles absolues :
 1. Tu DOIS citer un article parmi ceux fournis — aucun autre.
 2. Le champ 'quoted_text' doit être copié MOT-À-MOT depuis l'article cité.
    Toute modification, même mineure, est interdite.
-3. Sévérité : BLOQUANT = capital / âge / forme sociale ;
-              MAJEUR   = durée / visa / libération ;
+3. Sévérité : BLOQUANT = âge minimum / forme contractuelle ;
+              MAJEUR   = durée / visa inspection / libération ;
               MINEUR   = mentions / autres.
+Rédige la recommandation en français.
+"""
+
+_SYSTEM_VERIFIER_AR = """\
+أنت خبير في الامتثال القانوني. يجب عليك التحقق مما إذا كانت بنود العقد تستوفي الأنظمة المعمول بها.
+
+قواعد مطلقة:
+1. يجب أن تستشهد بمادة من المواد المقدَّمة فقط — لا غير.
+2. يجب أن يُنسَخ حقل 'quoted_text' حرفياً من المادة المستشهد بها.
+   أي تعديل مهما كان بسيطاً ممنوع.
+3. الخطورة: BLOQUANT = الحد الأدنى للسن / صيغة العقد ؛
+              MAJEUR   = المدة / تأشيرة التفتيش ؛
+              MINEUR   = البيانات الإلزامية / أخرى.
+اكتب التوصية باللغة العربية.
 """
 
 
@@ -78,10 +92,12 @@ def _call_llm(
     clause: dict,
     articles: list[dict],
     extra_feedback: str = "",
+    system_override: str = "",
 ) -> Optional[_VerifierOutput]:
     """Appelle le LLM et retourne le _VerifierOutput ou None en cas d'erreur."""
-    article_block = _format_articles(articles)
+    article_block  = _format_articles(articles)
     feedback_block = f"\n\nFeedback précédent :\n{extra_feedback}" if extra_feedback else ""
+    system_msg     = system_override or _SYSTEM_VERIFIER_FR
 
     prompt = (
         f"CLAUSE À VÉRIFIER :\n"
@@ -92,7 +108,7 @@ def _call_llm(
     )
     try:
         return llm.invoke([
-            SystemMessage(content=_SYSTEM_VERIFIER),
+            SystemMessage(content=system_msg),
             HumanMessage(content=prompt),
         ])
     except Exception as exc:
@@ -140,11 +156,14 @@ def verifier_node(state: AgentState) -> dict[str, Any]:
     """
     clauses: list[dict] = state.get("clauses", [])
     retrievals: dict[str, list[dict]] = state.get("retrievals", {})
+    language: str = state.get("language", "fr")
     findings: list[dict] = []
     errors: list[str] = []
 
     if not clauses:
         return {"findings": [], "errors": []}
+
+    system_msg = _SYSTEM_VERIFIER_AR if language == "ar" else _SYSTEM_VERIFIER_FR
 
     llm = ChatOpenAI(
         model=os.getenv("LLM_MODEL", "deepseek-chat"),
@@ -163,7 +182,7 @@ def verifier_node(state: AgentState) -> dict[str, Any]:
             continue
 
         # --- Tentative 1 ---
-        output = _call_llm(llm, clause, articles)
+        output = _call_llm(llm, clause, articles, system_override=system_msg)
         if output is None:
             findings.append(_fallback_finding(clause_id, "erreur LLM (tentative 1)"))
             errors.append(f"Vérificateur: LLM error sur clause '{clause_id}' (T1)")
@@ -189,7 +208,7 @@ def verifier_node(state: AgentState) -> dict[str, Any]:
             f"IDs disponibles : {available_ids}\n"
             "Tu dois choisir un ID parmi ceux-ci et copier le texte mot-à-mot."
         )
-        output2 = _call_llm(llm, clause, articles, extra_feedback=feedback)
+        output2 = _call_llm(llm, clause, articles, extra_feedback=feedback, system_override=system_msg)
 
         if output2 is not None:
             finding_dict2 = output2.model_dump()
