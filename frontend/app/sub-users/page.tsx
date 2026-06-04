@@ -19,13 +19,14 @@ export default function SubUsersPage() {
   const apiFetch = useApiFetch();
   const router = useRouter();
 
-  const [subUsers, setSubUsers] = useState<SubUser[]>([]);
-  const [name,     setName]     = useState("");
-  const [email,    setEmail]    = useState("");
-  const [password, setPassword] = useState("");
-  const [error,    setError]    = useState("");
-  const [success,  setSuccess]  = useState("");
-  const [busy,     setBusy]     = useState(false);
+  const [subUsers,        setSubUsers]        = useState<SubUser[]>([]);
+  const [name,            setName]            = useState("");
+  const [email,           setEmail]           = useState("");
+  const [password,        setPassword]        = useState("");
+  const [parentPassword,  setParentPassword]  = useState("");
+  const [error,           setError]           = useState("");
+  const [success,         setSuccess]         = useState("");
+  const [busy,            setBusy]            = useState(false);
 
   // Route guard
   useEffect(() => {
@@ -48,19 +49,20 @@ export default function SubUsersPage() {
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(""); setSuccess("");
-    if (password.length < 6) { setError("Mot de passe trop court (min. 6 caractères)"); return; }
+    if (password.length < 6)       { setError("Le mot de passe du sous-utilisateur doit comporter au moins 6 caractères"); return; }
+    if (!parentPassword)           { setError("Veuillez entrer votre mot de passe pour confirmer"); return; }
     setBusy(true);
     try {
       const res = await apiFetch("/api/users/sub-users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), email, password }),
+        body: JSON.stringify({ name: name.trim(), email, password, parent_password: parentPassword }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail ?? "Erreur serveur");
       }
-      setName(""); setEmail(""); setPassword("");
+      setName(""); setEmail(""); setPassword(""); setParentPassword("");
       setSuccess("Sous-utilisateur créé avec succès.");
       load();
     } catch (err: unknown) {
@@ -83,10 +85,11 @@ export default function SubUsersPage() {
         <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-6 mb-8 max-w-md">
           <h2 className="text-sm font-semibold text-neutral-900 mb-4">Créer un sous-utilisateur</h2>
           <form onSubmit={create} className="space-y-3">
+            {/* Sub-user fields */}
             {[
-              { label: "Nom complet",   value: name,     setter: setName,     type: "text",     placeholder: "Prénom Nom",         autocomplete: "off" },
-              { label: "Email",         value: email,    setter: setEmail,    type: "email",    placeholder: "email@exemple.mr",   autocomplete: "off" },
-              { label: "Mot de passe",  value: password, setter: setPassword, type: "password", placeholder: "Min. 6 caractères",  autocomplete: "new-password" },
+              { label: "Nom complet",              value: name,     setter: setName,     type: "text",     placeholder: "Prénom Nom",        autocomplete: "off" },
+              { label: "Email",                    value: email,    setter: setEmail,    type: "email",    placeholder: "email@exemple.mr",  autocomplete: "off" },
+              { label: "Mot de passe (sous-util.)", value: password, setter: setPassword, type: "password", placeholder: "Min. 6 caractères", autocomplete: "new-password" },
             ].map(({ label, value, setter, type, placeholder, autocomplete }) => (
               <div key={label}>
                 <label className="block text-xs font-medium text-neutral-700 mb-1">{label}</label>
@@ -101,6 +104,24 @@ export default function SubUsersPage() {
                 />
               </div>
             ))}
+
+            {/* Separator */}
+            <div className="border-t border-neutral-200 pt-3">
+              <label className="block text-xs font-medium text-neutral-700 mb-1">
+                Votre mot de passe
+                <span className="ml-1 text-neutral-400 font-normal">(confirmation requise)</span>
+              </label>
+              <input
+                type="password"
+                value={parentPassword}
+                onChange={e => setParentPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+                placeholder="••••••••"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-neutral-400 bg-white"
+              />
+            </div>
+
             {error   && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
             {success && <p className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2">{success}</p>}
             <button

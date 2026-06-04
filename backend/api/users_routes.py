@@ -15,19 +15,20 @@ Validated user only:
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from shared.auth import require_admin, require_approved, hash_password
+from shared.auth import require_admin, require_approved, hash_password, verify_password
 from db.users_crud import (
     get_stats, list_pending_users, update_user_status, list_all_users,
-    list_sub_users, create_user, get_user_by_email,
+    list_sub_users, create_user, get_user_by_email, get_user_by_id,
 )
 
 router = APIRouter()
 
 
 class CreateSubUserBody(BaseModel):
-    name: str
-    email: str
-    password: str
+    name:            str
+    email:           str
+    password:        str   # sub-user's password
+    parent_password: str   # parent's own password — must be verified before creation
 
 
 def _pub(u: dict) -> dict:
@@ -84,8 +85,14 @@ def my_sub_users(current: dict = Depends(require_approved)):
 def create_sub_user(body: CreateSubUserBody, current: dict = Depends(require_approved)):
     if current["role"] != "user":
         raise HTTPException(403, "Seuls les utilisateurs validés peuvent créer des sous-utilisateurs")
+
+    # Verify the parent's own password before allowing sub-user creation
+    parent = get_user_by_id(current["sub"])
+    if not parent or not verify_password(body.parent_password, parent["password_hash"]):
+        raise HTTPException(401, "Mot de passe incorrect")
+
     if len(body.password) < 6:
-        raise HTTPException(400, "Le mot de passe doit comporter au moins 6 caractères")
+        raise HTTPException(400, "Le mot de passe du sous-utilisateur doit comporter au moins 6 caractères")
     if get_user_by_email(body.email):
         raise HTTPException(400, "Cet email est déjà utilisé")
     sub = create_user(
