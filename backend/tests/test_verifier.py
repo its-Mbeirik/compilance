@@ -13,18 +13,18 @@ from shared.schemas import FindingVerdict, FindingSeverity, ClauseType
 
 
 # ---------------------------------------------------------------------------
-# Tests citation_guard — unitaires purs (section 3.3.3 du PDF)
+# Tests citation_guard — unitaires purs
 # ---------------------------------------------------------------------------
 
-ART311_TEXT = (
-    "Article 311 : Le montant du capital social est fixé librement par les associés. "
-    "Il ne peut être inférieur à un million (1 000 000) de francs CFA."
+ART10_TEXT = (
+    "Article 10 : La période d'essai ne peut excéder six (6) mois pour les travailleurs "
+    "et douze (12) mois pour les cadres et assimilés."
 )
 
 RETRIEVALS_OK = {
     "clause-1": [
-        {"id": "OHADA-AUSCGIE-311", "text": ART311_TEXT},
-        {"id": "OHADA-AUSCGIE-312", "text": "Article 312 : Les parts sociales."},
+        {"id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",  "text": ART10_TEXT},
+        {"id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-153", "text": "Article 153 : L'âge minimum est de 14 ans."},
     ]
 }
 
@@ -32,8 +32,8 @@ RETRIEVALS_OK = {
 def test_citation_guard_valid():
     finding = {
         "clause_id": "clause-1",
-        "cited_article_id": "OHADA-AUSCGIE-311",
-        "quoted_text": "Il ne peut être inférieur à un million (1 000 000) de francs CFA.",
+        "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
+        "quoted_text": "ne peut excéder six (6) mois pour les travailleurs",
     }
     valid, msg = citation_guard(finding, RETRIEVALS_OK)
     assert valid is True
@@ -43,7 +43,7 @@ def test_citation_guard_valid():
 def test_citation_guard_rejects_missing_clause_id():
     finding = {
         "clause_id": "clause-999",
-        "cited_article_id": "OHADA-AUSCGIE-311",
+        "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
         "quoted_text": "texte quelconque",
     }
     valid, msg = citation_guard(finding, RETRIEVALS_OK)
@@ -54,7 +54,7 @@ def test_citation_guard_rejects_missing_clause_id():
 def test_citation_guard_rejects_hallucinated_id():
     finding = {
         "clause_id": "clause-1",
-        "cited_article_id": "OHADA-AUSCGIE-999",   # pas dans top-5
+        "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-999",   # pas dans top-5
         "quoted_text": "texte quelconque",
     }
     valid, msg = citation_guard(finding, RETRIEVALS_OK)
@@ -65,8 +65,8 @@ def test_citation_guard_rejects_hallucinated_id():
 def test_citation_guard_rejects_paraphrased_quote():
     finding = {
         "clause_id": "clause-1",
-        "cited_article_id": "OHADA-AUSCGIE-311",
-        "quoted_text": "Le capital ne peut pas être inférieur à 1 million.",  # paraphrase
+        "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
+        "quoted_text": "La période d'essai ne doit pas dépasser 6 mois.",   # paraphrase
     }
     valid, msg = citation_guard(finding, RETRIEVALS_OK)
     assert valid is False
@@ -76,13 +76,10 @@ def test_citation_guard_rejects_paraphrased_quote():
 def test_citation_guard_rejects_empty_quote():
     finding = {
         "clause_id": "clause-1",
-        "cited_article_id": "OHADA-AUSCGIE-311",
+        "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
         "quoted_text": "",
     }
     valid, msg = citation_guard(finding, RETRIEVALS_OK)
-    # Une chaîne vide est sous-chaîne de tout — guard doit quand même passer
-    # (comportement voulu : le LLM ne doit pas produire de quote vide)
-    # On vérifie juste le type de retour
     assert isinstance(valid, bool)
     assert isinstance(msg, str)
 
@@ -91,8 +88,8 @@ def test_citation_guard_exact_full_article_text():
     """La totalité du texte de l'article est une citation valide."""
     finding = {
         "clause_id": "clause-1",
-        "cited_article_id": "OHADA-AUSCGIE-311",
-        "quoted_text": ART311_TEXT,
+        "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
+        "quoted_text": ART10_TEXT,
     }
     valid, msg = citation_guard(finding, RETRIEVALS_OK)
     assert valid is True
@@ -102,8 +99,8 @@ def test_citation_guard_exact_full_article_text():
 # Tests verifier_node avec mocks LLM
 # ---------------------------------------------------------------------------
 
-def _make_clause(clause_id: str = "c1", type_clause: str = "capital_social",
-                 text: str = "capital social SARL 500 000 FCFA") -> dict:
+def _make_clause(clause_id: str = "c1", type_clause: str = "periode_essai",
+                 text: str = "période d'essai 9 mois") -> dict:
     return {"clause_id": clause_id, "type_clause": type_clause, "text": text}
 
 
@@ -111,7 +108,7 @@ def _make_state(clauses: list[dict], retrievals: dict) -> dict:
     return {
         "contract_id": "test",
         "contract_text": "...",
-        "jurisdiction": "ohada",
+        "jurisdiction": "mauritania_labor",
         "extracted": {},
         "clauses": clauses,
         "retrievals": retrievals,
@@ -122,9 +119,9 @@ def _make_state(clauses: list[dict], retrievals: dict) -> dict:
 
 def _mock_llm_output(
     verdict: str = "NON_CONFORME",
-    cited_id: str = "OHADA-AUSCGIE-311",
-    quoted: str = "Il ne peut être inférieur à un million (1 000 000) de francs CFA.",
-    recommendation: str = "Augmenter le capital à 1 000 000 FCFA minimum.",
+    cited_id: str = "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
+    quoted: str = "ne peut excéder six (6) mois pour les travailleurs",
+    recommendation: str = "Réduire la période d'essai à 6 mois maximum.",
     severity: str = "BLOQUANT",
 ):
     from agents.verifier import _VerifierOutput
@@ -159,7 +156,7 @@ def test_verifier_node_valid_citation():
     from agents.verifier import verifier_node
 
     clause = _make_clause("c1")
-    articles = [{"id": "OHADA-AUSCGIE-311", "full_text": ART311_TEXT, "text": ART311_TEXT}]
+    articles = [{"id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10", "full_text": ART10_TEXT, "text": ART10_TEXT}]
     state = _make_state([clause], {"c1": articles})
 
     mock_output = _mock_llm_output()
@@ -176,7 +173,7 @@ def test_verifier_node_valid_citation():
     f = result["findings"][0]
     assert f["citation_valid"] is True
     assert f["verdict"] == "NON_CONFORME"
-    assert f["cited_article_id"] == "OHADA-AUSCGIE-311"
+    assert f["cited_article_id"] == "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10"
 
 
 def test_verifier_node_retry_on_invalid_citation():
@@ -187,11 +184,11 @@ def test_verifier_node_retry_on_invalid_citation():
     from agents.verifier import verifier_node
 
     clause = _make_clause("c1")
-    articles = [{"id": "OHADA-AUSCGIE-311", "full_text": ART311_TEXT, "text": ART311_TEXT}]
+    articles = [{"id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10", "full_text": ART10_TEXT, "text": ART10_TEXT}]
     state = _make_state([clause], {"c1": articles})
 
-    bad_output = _mock_llm_output(cited_id="OHADA-AUSCGIE-999")   # ID inexistant
-    good_output = _mock_llm_output(cited_id="OHADA-AUSCGIE-311")
+    bad_output  = _mock_llm_output(cited_id="MAURITANIA_LABOR-CODE_TRAVAIL_MR-999")
+    good_output = _mock_llm_output(cited_id="MAURITANIA_LABOR-CODE_TRAVAIL_MR-10")
 
     call_count = {"n": 0}
     def mock_invoke(messages):
@@ -216,10 +213,10 @@ def test_verifier_node_fallback_after_two_failures():
     from agents.verifier import verifier_node
 
     clause = _make_clause("c1")
-    articles = [{"id": "OHADA-AUSCGIE-311", "full_text": ART311_TEXT, "text": ART311_TEXT}]
+    articles = [{"id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10", "full_text": ART10_TEXT, "text": ART10_TEXT}]
     state = _make_state([clause], {"c1": articles})
 
-    bad_output = _mock_llm_output(cited_id="OHADA-AUSCGIE-999")
+    bad_output = _mock_llm_output(cited_id="MAURITANIA_LABOR-CODE_TRAVAIL_MR-999")
 
     with patch("agents.verifier.ChatOpenAI") as mock_cls:
         mock_llm = MagicMock()
@@ -236,12 +233,12 @@ def test_verifier_node_fallback_after_two_failures():
 
 
 def test_verifier_node_multiple_clauses():
-    """Tous les clauses sont traitées même si la première échoue."""
+    """Toutes les clauses sont traitées même si la première échoue."""
     from agents.verifier import verifier_node
 
     clauses = [_make_clause("c1"), _make_clause("c2")]
-    articles = [{"id": "OHADA-AUSCGIE-311", "full_text": ART311_TEXT, "text": ART311_TEXT}]
-    retrievals = {"c1": articles, "c2": []}  # c2 sans articles
+    articles = [{"id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10", "full_text": ART10_TEXT, "text": ART10_TEXT}]
+    retrievals = {"c1": articles, "c2": []}   # c2 sans articles
     state = _make_state(clauses, retrievals)
 
     good_output = _mock_llm_output()
@@ -257,7 +254,7 @@ def test_verifier_node_multiple_clauses():
     assert len(result["findings"]) == 2
     assert result["findings"][0]["clause_id"] == "c1"
     assert result["findings"][1]["clause_id"] == "c2"
-    assert result["findings"][1]["citation_valid"] is False  # fallback
+    assert result["findings"][1]["citation_valid"] is False   # fallback
 
 
 # ---------------------------------------------------------------------------
@@ -267,8 +264,8 @@ def test_verifier_node_multiple_clauses():
 @pytest.mark.slow
 def test_verifier_node_real_llm_non_conforme():
     """
-    Test end-to-end vérificateur avec Claude réel.
-    Capital 500 000 FCFA < 1 000 000 → verdict NON_CONFORME.
+    Test end-to-end vérificateur avec LLM réel.
+    Période d'essai 9 mois > 6 mois max → verdict NON_CONFORME.
     """
     import os
     if not (os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")):
@@ -276,15 +273,16 @@ def test_verifier_node_real_llm_non_conforme():
     from agents.verifier import verifier_node
 
     clause = _make_clause(
-        "cap-1",
-        text="capital social SARL 500 000 FCFA",
+        "essai-1",
+        type_clause="periode_essai",
+        text="période d'essai travailleur 9 mois",
     )
     articles = [{
-        "id": "OHADA-AUSCGIE-311",
-        "full_text": ART311_TEXT,
-        "text": ART311_TEXT,
+        "id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
+        "full_text": ART10_TEXT,
+        "text": ART10_TEXT,
     }]
-    state = _make_state([clause], {"cap-1": articles})
+    state = _make_state([clause], {"essai-1": articles})
     result = verifier_node(state)
 
     assert len(result["findings"]) == 1
@@ -293,7 +291,5 @@ def test_verifier_node_real_llm_non_conforme():
         FindingVerdict.NON_CONFORME.value,
         FindingVerdict.EXIGE_REVUE.value,
     ]
-    # La citation doit être valide ou le retry l'avoir corrigée
-    # (on accepte citation_valid=False uniquement si le LLM a vraiment échoué)
     if f["citation_valid"]:
-        assert f["cited_article_id"] == "OHADA-AUSCGIE-311"
+        assert f["cited_article_id"] == "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10"

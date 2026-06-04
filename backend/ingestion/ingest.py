@@ -1,8 +1,9 @@
 """
-Jalon 2 — Script principal d'ingestion du corpus juridique.
+Jalon 2 — Script principal d'ingestion du corpus juridique mauritanien.
 Usage:
-    python -m ingestion.ingest --pdf path/to/auscgie.pdf --jurisdiction ohada \
-                               --code AUSCGIE --version-date 2014-05-05
+    python -m ingestion.ingest --pdf path/to/code_travail.pdf \
+                               --jurisdiction mauritania_labor \
+                               --code CODE_TRAVAIL_MR --version-date 2004-01-01
 
     python -m ingestion.ingest --seed           # insère les articles de seed_articles.py
     python -m ingestion.ingest --seed --embed   # seed + génère les vrais embeddings BGE-M3
@@ -121,14 +122,15 @@ def print_stats() -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Ingestion du corpus juridique OHADA / Code du Travail MR"
+        description="Ingestion du corpus juridique mauritanien"
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--pdf", type=str, help="Chemin vers le PDF à ingérer")
     group.add_argument("--seed", action="store_true",
                        help="Insère les articles de référence (seed_articles.py)")
 
-    parser.add_argument("--jurisdiction", choices=["ohada", "mauritania_labor"],
+    parser.add_argument("--jurisdiction", choices=["mauritania_labor"],
+                        default="mauritania_labor",
                         help="Juridiction (requis avec --pdf)")
     parser.add_argument("--code", type=str,
                         help="Nom du code, ex: AUSCGIE ou CODE_TRAVAIL_MR")

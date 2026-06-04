@@ -5,15 +5,15 @@ Lance avec : pytest tests/test_guards.py -v
 """
 from shared.guards import citation_guard
 
-ARTICLE_311_TEXT = (
-    "Le montant du capital social de la SARL est fixé librement par les associés. "
-    "Il ne peut être inférieur à un million (1 000 000) de francs CFA."
+ARTICLE_10_TEXT = (
+    "Article 10 : La période d'essai ne peut excéder six (6) mois pour les travailleurs "
+    "et douze (12) mois pour les cadres et assimilés."
 )
 
 RETRIEVALS = {
     "clause_01": [
-        {"id": "OHADA-AUSCGIE-311", "text": ARTICLE_311_TEXT},
-        {"id": "OHADA-AUSCGIE-312", "text": "Les parts sociales sont égales..."},
+        {"id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",  "text": ARTICLE_10_TEXT},
+        {"id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-153", "text": "Article 153 : L'âge minimum d'admission à l'emploi est fixé à quatorze ans."},
     ]
 }
 
@@ -21,8 +21,8 @@ RETRIEVALS = {
 def test_citation_valid():
     finding = {
         "clause_id": "clause_01",
-        "cited_article_id": "OHADA-AUSCGIE-311",
-        "quoted_text": "inférieur à un million (1 000 000) de francs CFA",
+        "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
+        "quoted_text": "ne peut excéder six (6) mois pour les travailleurs",
     }
     ok, msg = citation_guard(finding, RETRIEVALS)
     assert ok is True
@@ -32,7 +32,7 @@ def test_citation_valid():
 def test_citation_hallucinated_id():
     finding = {
         "clause_id": "clause_01",
-        "cited_article_id": "OHADA-AUSCGIE-999",   # n'existe pas dans top-5
+        "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-999",   # n'existe pas dans top-5
         "quoted_text": "quelque chose",
     }
     ok, msg = citation_guard(finding, RETRIEVALS)
@@ -43,8 +43,8 @@ def test_citation_hallucinated_id():
 def test_citation_wrong_quoted_text():
     finding = {
         "clause_id": "clause_01",
-        "cited_article_id": "OHADA-AUSCGIE-311",
-        "quoted_text": "ce texte n'est pas dans l'article",  # hallucination textuelle
+        "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
+        "quoted_text": "ce texte n'est pas dans l'article",   # hallucination textuelle
     }
     ok, msg = citation_guard(finding, RETRIEVALS)
     assert ok is False
@@ -54,7 +54,7 @@ def test_citation_wrong_quoted_text():
 def test_citation_unknown_clause_id():
     finding = {
         "clause_id": "clause_inconnu",
-        "cited_article_id": "OHADA-AUSCGIE-311",
+        "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
         "quoted_text": "texte",
     }
     ok, msg = citation_guard(finding, RETRIEVALS)
@@ -65,8 +65,8 @@ def test_citation_unknown_clause_id():
 def test_citation_exact_full_text():
     finding = {
         "clause_id": "clause_01",
-        "cited_article_id": "OHADA-AUSCGIE-311",
-        "quoted_text": ARTICLE_311_TEXT,  # citation complète du texte
+        "cited_article_id": "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
+        "quoted_text": ARTICLE_10_TEXT,   # citation complète du texte
     }
     ok, msg = citation_guard(finding, RETRIEVALS)
     assert ok is True

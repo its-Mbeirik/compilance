@@ -30,7 +30,7 @@ class _VerifierOutput(BaseModel):
         description="CONFORME, NON_CONFORME, ou EXIGE_REVUE"
     )
     cited_article_id: str = Field(
-        description="ID exact de l'article, ex: 'OHADA-AUSCGIE-311'"
+        description="ID exact de l'article, ex: 'MAURITANIA_LABOR-CODE_TRAVAIL_MR-10'"
     )
     quoted_text: str = Field(
         description=(

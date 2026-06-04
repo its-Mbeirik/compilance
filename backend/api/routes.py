@@ -111,7 +111,7 @@ async def submit_analysis(
         jurisdiction = _detect_jurisdiction(contract_text)
 
     # Sauvegarde le fichier
-    doc_type = "statuts" if jurisdiction == "ohada" else "contrat_travail"
+    doc_type = "contrat_travail"
     contract_id = create_contract(doc_type, str(UPLOAD_DIR / (file.filename or "upload")), jurisdiction)
     analysis_id = create_analysis(contract_id)
 
@@ -268,7 +268,8 @@ def _ask_llm(question: str, context: str) -> str:
     from langchain_core.messages import HumanMessage, SystemMessage
 
     system = (
-        "Tu es un assistant juridique spécialisé en droit OHADA et droit du travail mauritanien. "
+        "Tu es un assistant juridique spécialisé en droit mauritanien : "
+        "Code du Travail, Code des Obligations et des Contrats, et Convention Collective Générale du Travail. "
         "Réponds en français, de façon concise et précise, en te basant uniquement sur le contexte fourni."
     )
     prompt = f"Contexte de l'analyse :\n{context}\n\nQuestion : {question}"

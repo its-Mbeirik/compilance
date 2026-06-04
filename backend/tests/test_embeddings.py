@@ -19,7 +19,7 @@ def bge_model():
     return SentenceTransformer("BAAI/bge-m3")
 
 
-# 10 paires de paraphrases juridiques françaises (OHADA + Code du Travail)
+# 10 paires de paraphrases juridiques françaises (Droit mauritanien)
 PARAPHRASE_PAIRS = [
     (
         "Le capital social minimum d'une SARL ne peut être inférieur à un million de francs CFA.",

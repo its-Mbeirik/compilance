@@ -1,5 +1,7 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth, useApiFetch } from "./contexts/auth";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -201,13 +203,19 @@ function Sidebar({
   onNew,
   open,
   onClose,
+  userName,
+  userRole,
+  onLogout,
 }: {
-  history: HistoryItem[];
+  history:  HistoryItem[];
   activeId: string | null;
   onSelect: (item: HistoryItem) => void;
-  onNew: () => void;
-  open: boolean;
-  onClose: () => void;
+  onNew:    () => void;
+  open:     boolean;
+  onClose:  () => void;
+  userName: string;
+  userRole: string;
+  onLogout: () => void;
 }) {
   const fmt = (iso: string) => {
     try {
@@ -296,6 +304,27 @@ function Sidebar({
             </>
           )}
         </div>
+
+        {/* User info + links */}
+        <div className="px-4 py-4 border-t border-white/10 shrink-0">
+          <p className="text-white/40 text-xs truncate mb-1">{userName}</p>
+          <div className="text-[10px] bg-white/10 text-white/50 px-2 py-0.5 rounded-full w-fit mb-2">
+            {userRole === "sub_user" ? "Sous-utilisateur" : "Utilisateur"}
+          </div>
+          <div className="flex flex-col gap-1">
+            {userRole === "user" && (
+              <a href="/sub-users" className="text-xs text-white/40 hover:text-white transition-colors">
+                Sous-utilisateurs
+              </a>
+            )}
+            <a href="/settings" className="text-xs text-white/40 hover:text-white transition-colors">
+              Paramètres
+            </a>
+            <button onClick={onLogout} className="text-xs text-white/40 hover:text-white transition-colors text-left mt-1">
+              Déconnexion
+            </button>
+          </div>
+        </div>
       </aside>
     </>
   );
@@ -309,6 +338,10 @@ const WELCOME: Msg = {
 };
 
 export default function Home() {
+  const { user, loading, logout } = useAuth();
+  const apiFetch = useApiFetch();
+  const router = useRouter();
+
   const [messages, setMessages]   = useState<Msg[]>([WELCOME]);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [analysis, setAnalysis]   = useState<Analysis | null>(null);
@@ -319,6 +352,14 @@ export default function Home() {
   const [history, setHistory]     = useState<HistoryItem[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Auth guard: redirect unauthenticated or pending users
+  useEffect(() => {
+    if (loading) return;
+    if (!user)                      { router.replace("/login");   return; }
+    if (user.role === "admin")      { router.replace("/admin");   return; }
+    if (user.status !== "approved") { router.replace("/pending"); return; }
+  }, [user, loading, router]);
+
   const fileRef   = useRef<HTMLInputElement>(null);
   const textRef   = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -327,10 +368,10 @@ export default function Home() {
   // Fetch conversation history
   const refreshHistory = useCallback(async () => {
     try {
-      const res = await fetch("/api/analyses");
+      const res = await apiFetch("/api/analyses");
       if (res.ok) setHistory(await res.json());
     } catch { /* ignore */ }
-  }, []);
+  }, [apiFetch]);
 
   useEffect(() => { refreshHistory(); }, [refreshHistory]);
 
@@ -348,7 +389,7 @@ export default function Home() {
   // ── polling ──────────────────────────────────────────────────────────────
   const poll = useCallback(async (id: string) => {
     try {
-      const res  = await fetch(`/api/analyses/${id}`);
+      const res  = await apiFetch(`/api/analyses/${id}`);
       const data: Analysis = await res.json();
       if (data.status === "done") {
         setAnalysis(data);
@@ -372,7 +413,7 @@ export default function Home() {
     } catch {
       pollRef.current = setTimeout(() => poll(id), 4000);
     }
-  }, [refreshHistory]);
+  }, [refreshHistory, apiFetch]);
 
   useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current); }, []);
 
@@ -390,7 +431,7 @@ export default function Home() {
     ]);
 
     try {
-      const res  = await fetch(`/api/analyses/${item.analysis_id}`);
+      const res  = await apiFetch(`/api/analyses/${item.analysis_id}`);
       const data: Analysis = await res.json();
       setAnalysis(data);
 
@@ -420,7 +461,7 @@ export default function Home() {
     } catch {
       setMessages((prev) => [...prev, { kind: "error", text: "Impossible de charger l'analyse." }]);
     }
-  }, [poll]);
+  }, [poll, apiFetch]);
 
   // ── reset ─────────────────────────────────────────────────────────────────
   const reset = useCallback(() => {
@@ -449,7 +490,7 @@ export default function Home() {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("jurisdiction", "mauritania_labor");
-      const res  = await fetch("/api/analyses", { method: "POST", body: fd });
+      const res  = await apiFetch("/api/analyses", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail ?? "Erreur serveur");
       setAnalysisId(data.analysis_id);
@@ -520,7 +561,7 @@ export default function Home() {
     try {
       // ── Correction request ───────────────────────────────────────────────
       if (isCorrectRequest(msg)) {
-        const res = await fetch(`/api/correct-document/${analysisId}`, { method: "POST" });
+        const res = await apiFetch(`/api/correct-document/${analysisId}`, { method: "POST" });
         if (!res.ok) {
           let detail = "Erreur lors de la correction";
           try { detail = (await res.json()).detail ?? detail; } catch { /* non-JSON body */ }
@@ -539,7 +580,7 @@ export default function Home() {
 
       // ── Generation request ───────────────────────────────────────────────
       } else if (isGenerateRequest(msg)) {
-        const res = await fetch("/api/generate-document", {
+        const res = await apiFetch("/api/generate-document", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ description: msg }),
@@ -563,7 +604,7 @@ export default function Home() {
       // ── Normal chat ──────────────────────────────────────────────────────
       } else {
         const url = analysisId ? `/api/chat/${analysisId}` : "/api/chat";
-        const res  = await fetch(url, {
+        const res  = await apiFetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: msg }),
@@ -605,6 +646,9 @@ export default function Home() {
   const canSend     = !busy && (!!file || !!text.trim());
   const placeholder = busy ? "Réflexion en cours…" : "Message…";
 
+  // Wait for auth before rendering (redirects are handled in useEffect)
+  if (loading || !user) return null;
+
   // ── render ────────────────────────────────────────────────────────────────
   return (
     <div
@@ -621,6 +665,9 @@ export default function Home() {
         onNew={reset}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        userName={user.name}
+        userRole={user.role}
+        onLogout={logout}
       />
 
       {/* Main */}

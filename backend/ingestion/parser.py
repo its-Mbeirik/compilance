@@ -46,7 +46,7 @@ _HIER_PATTERNS = [
     ("section",  re.compile(r"(?:^|\n)\s*(?:SECTION|Section)\s+([IVXLCDM0-9]+(?:\s+[A-ZÀ-Üa-zà-ü ]+)?)", re.M)),
 ]
 
-# Début d'article — toutes les variantes rencontrées dans OHADA/Code du Travail
+# Début d'article — variantes rencontrées dans le corpus juridique mauritanien
 _ARTICLE_PATTERN = re.compile(
     r"(?:^|\n)\s*"
     r"(?:Art(?:icle)?\.?\s*)"
@@ -58,7 +58,6 @@ _ARTICLE_PATTERN = re.compile(
 # Numéros de page et en-têtes répétitifs à supprimer
 _NOISE_PATTERNS = [
     re.compile(r"^\s*\d+\s*$", re.MULTILINE),            # page seule
-    re.compile(r"OHADA\s*[-–]\s*Acte Uniforme.*?\n", re.IGNORECASE),
     re.compile(r"Code du Travail.*?\n", re.IGNORECASE),
     re.compile(r"Journal Officiel.*?\n", re.IGNORECASE),
     re.compile(r"[-–]{10,}", re.MULTILINE),               # lignes de séparation

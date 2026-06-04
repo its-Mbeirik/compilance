@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AuthProvider } from "./contexts/auth";
 
 export const metadata: Metadata = {
   title: "ConformIA — Assistant de conformité contractuelle",
@@ -10,7 +11,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr">
-      <body className="bg-white overflow-hidden">{children}</body>
+      <body className="bg-white overflow-hidden">
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

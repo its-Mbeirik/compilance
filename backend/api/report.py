@@ -129,11 +129,9 @@ def _build_context(analysis: dict) -> dict:
         counts[v] = counts.get(v, 0) + 1
 
     jurisdiction_labels = {
-        "ohada": "OHADA — Droit des sociétés commerciales",
-        "mauritania_labor": "Code du Travail Mauritanien",
+        "mauritania_labor": "Droit mauritanien — Code du Travail & COC",
     }
     doc_type_labels = {
-        "statuts": "Statuts d'entreprise",
         "contrat_travail": "Contrat de travail",
     }
 

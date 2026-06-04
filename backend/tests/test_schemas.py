@@ -9,7 +9,6 @@ from pydantic import ValidationError
 from shared.schemas import (
     AgentState,
     Article,
-    Associe,
     Clause,
     ClauseType,
     ContratsExtraction,
@@ -17,7 +16,6 @@ from shared.schemas import (
     FindingSeverity,
     FindingVerdict,
     Jurisdiction,
-    StatutsExtraction,
 )
 
 
@@ -26,9 +24,9 @@ from shared.schemas import (
 # ---------------------------------------------------------------------------
 
 def test_clause_creation():
-    c = Clause(type_clause=ClauseType.CAPITAL_SOCIAL, text="Le capital est de 1 000 000 FCFA.")
+    c = Clause(type_clause=ClauseType.TYPE_CONTRAT, text="Contrat à durée déterminée.")
     assert c.clause_id is not None
-    assert c.type_clause == ClauseType.CAPITAL_SOCIAL
+    assert c.type_clause == ClauseType.TYPE_CONTRAT
 
 
 def test_clause_with_jurisdiction():
@@ -38,65 +36,6 @@ def test_clause_with_jurisdiction():
         jurisdiction_hint=Jurisdiction.MAURITANIA_LABOR,
     )
     assert c.jurisdiction_hint == Jurisdiction.MAURITANIA_LABOR
-
-
-# ---------------------------------------------------------------------------
-# StatutsExtraction
-# ---------------------------------------------------------------------------
-
-def test_statuts_valid():
-    s = StatutsExtraction(
-        forme_sociale="SARL",
-        denomination="Tech Sahel SARL",
-        siege_social="Nouakchott, Mauritanie",
-        objet_social="Services informatiques",
-        duree_annees=99,
-        capital_social_fcfa=1_000_000,
-        parts_sociales_nb=1000,
-        parts_sociales_valeur_fcfa=1000,
-        associes=[Associe(nom="Ahmed Ould Baye", apport_fcfa=1_000_000, parts_nb=1000)],
-        clauses=[
-            Clause(type_clause=ClauseType.CAPITAL_SOCIAL, text="Capital de 1 000 000 FCFA."),
-            Clause(type_clause=ClauseType.DUREE_SOCIETE, text="Durée 99 ans."),
-        ],
-    )
-    assert s.forme_sociale == "SARL"
-    assert s.duree_annees == 99
-    assert len(s.clauses) == 2
-
-
-def test_statuts_duree_over_99_rejected():
-    with pytest.raises(ValidationError) as exc_info:
-        StatutsExtraction(
-            forme_sociale="SA",
-            denomination="BadCo SA",
-            siege_social="Nouakchott",
-            objet_social="Commerce",
-            duree_annees=100,   # violates Art. 28 AUSCGIE
-            capital_social_fcfa=10_000_000,
-            parts_sociales_nb=1000,
-            parts_sociales_valeur_fcfa=10_000,
-            associes=[],
-            clauses=[],
-        )
-    assert "99" in str(exc_info.value)
-
-
-def test_statuts_all_formes_sociales():
-    for forme in ("SARL", "SA", "SAS", "SNC", "GIE"):
-        s = StatutsExtraction(
-            forme_sociale=forme,
-            denomination=f"Test {forme}",
-            siege_social="Dakar",
-            objet_social="Test",
-            duree_annees=50,
-            capital_social_fcfa=5_000_000,
-            parts_sociales_nb=500,
-            parts_sociales_valeur_fcfa=10_000,
-            associes=[],
-            clauses=[],
-        )
-        assert s.forme_sociale == forme
 
 
 # ---------------------------------------------------------------------------
@@ -139,23 +78,44 @@ def test_contrat_travail_cdd_avec_visa():
     assert c.duree_mois == 6
 
 
+def test_contrat_all_types():
+    for t in ("CDI", "CDD", "CTT", "Stage", "Autre"):
+        c = ContratsExtraction(
+            type_contrat=t,
+            employeur="Employeur Test",
+            employe="Employé Test",
+            poste="Poste Test",
+        )
+        assert c.type_contrat == t
+
+
 # ---------------------------------------------------------------------------
 # Article
 # ---------------------------------------------------------------------------
 
-def test_article_ohada():
+def test_article_mauritania_labor():
     a = Article(
-        id="OHADA-AUSCGIE-311",
-        jurisdiction="ohada",
-        code_name="AUSCGIE",
-        article_number="311",
-        hierarchy_path="Livre 2 > Titre 2 > Chapitre 1",
-        full_text="Le montant du capital social de la SARL est fixé librement par les associés. "
-                  "Il ne peut être inférieur à un million (1 000 000) de francs CFA.",
+        id="MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
+        jurisdiction="mauritania_labor",
+        code_name="CODE_TRAVAIL_MR",
+        article_number="10",
+        hierarchy_path="Titre 1 > Chapitre 1",
+        full_text="Article 10 : La période d'essai ne peut excéder six mois pour les travailleurs.",
         language="fr",
     )
-    assert a.id == "OHADA-AUSCGIE-311"
+    assert a.id == "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10"
     assert a.score is None
+
+
+def test_article_coc():
+    a = Article(
+        id="MAURITANIA_LABOR-COC_MR-1",
+        jurisdiction="mauritania_labor",
+        code_name="COC_MR",
+        article_number="1",
+        full_text="Article 1 : Les obligations naissent d'un contrat...",
+    )
+    assert a.jurisdiction == "mauritania_labor"
 
 
 # ---------------------------------------------------------------------------
@@ -166,9 +126,9 @@ def test_finding_non_conforme():
     f = Finding(
         clause_id="abc123",
         verdict=FindingVerdict.NON_CONFORME,
-        cited_article_id="OHADA-AUSCGIE-311",
-        quoted_text="inférieur à un million (1 000 000) de francs CFA",
-        recommendation="Augmenter le capital social à 1 000 000 FCFA minimum.",
+        cited_article_id="MAURITANIA_LABOR-CODE_TRAVAIL_MR-10",
+        quoted_text="La période d'essai ne peut excéder six mois",
+        recommendation="Réduire la période d'essai à 6 mois maximum.",
         severity=FindingSeverity.BLOQUANT,
         citation_valid=True,
     )
@@ -180,10 +140,10 @@ def test_finding_default_citation_invalid():
     f = Finding(
         clause_id="xyz",
         verdict=FindingVerdict.CONFORME,
-        cited_article_id="OHADA-AUSCGIE-28",
-        quoted_text="ne peut excéder quatre-vingt-dix-neuf ans",
+        cited_article_id="MAURITANIA_LABOR-CODE_TRAVAIL_MR-153",
+        quoted_text="L'âge minimum légal est de quatorze ans",
     )
-    assert f.citation_valid is False  # default avant passage par citation_guard
+    assert f.citation_valid is False   # default avant passage par citation_guard
 
 
 # ---------------------------------------------------------------------------

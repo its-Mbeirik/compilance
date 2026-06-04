@@ -73,7 +73,7 @@ def run_pipeline(
 
     Args:
         contract_text: Texte brut du contrat.
-        jurisdiction:  'ohada' ou 'mauritania_labor'.
+        jurisdiction:  'mauritania_labor'.
         contract_id:   Identifiant unique (généré si absent).
         use_postgres:  Activer PostgresSaver pour la persistance.
 

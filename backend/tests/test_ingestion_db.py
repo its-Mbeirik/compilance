@@ -96,7 +96,3 @@ def test_search_filtered_by_jurisdiction():
 
     labor_results = search_articles(query_emb, jurisdiction="mauritania_labor", top_k=10)
     assert all(r["jurisdiction"] == "mauritania_labor" for r in labor_results)
-
-    # Aucun article n'a jurisdiction="ohada" depuis la migration du corpus
-    no_results = search_articles(query_emb, jurisdiction="ohada", top_k=10)
-    assert len(no_results) == 0, "Le corpus ne contient plus d'articles OHADA"
