@@ -40,11 +40,11 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@conformia.mr}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin1234!}
       SECRET_KEY: ${SECRET_KEY:-conformia-secret-key-change-in-production}
-      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM: ${SMTP_FROM:-noreply@conformia.mr}
+      SMTP_USER: ${SMTP_USER:-conformaimr@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-jbob vdih ahin fzev}
+      SMTP_FROM: ${SMTP_FROM:-conformaimr@gmail.com}
       APP_URL: ${APP_URL:-http://localhost:3000}
     volumes:
       - ./backend:/app
