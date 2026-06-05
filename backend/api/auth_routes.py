@@ -12,7 +12,7 @@ PUT  /api/auth/password          — authenticated: change password
 """
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from shared.auth import (
@@ -76,7 +76,7 @@ def _pub(u: dict) -> dict:
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @router.post("/register", status_code=201)
-def register(body: RegisterBody, background_tasks: BackgroundTasks):
+def register(body: RegisterBody):
     if len(body.password) < 6:
         raise HTTPException(400, "Le mot de passe doit comporter au moins 6 caractères")
     if get_user_by_email(body.email):
@@ -90,7 +90,7 @@ def register(body: RegisterBody, background_tasks: BackgroundTasks):
     )
     token = create_token(user["id"], "email_verification", expire_hours=24)
     from shared.email import send_verification_email
-    background_tasks.add_task(send_verification_email, body.email, body.name.strip(), token)
+    send_verification_email(body.email, body.name.strip(), token)  # runs in daemon thread
     return {
         "message": "Compte créé. Vérifiez votre email puis attendez l'approbation d'un administrateur.",
         "id": user["id"],
@@ -125,12 +125,12 @@ def verify_email(token: str = Query(...)):
 
 
 @router.post("/forgot-password")
-def forgot_password(body: ForgotPasswordBody, background_tasks: BackgroundTasks):
+def forgot_password(body: ForgotPasswordBody):
     user = get_user_by_email(body.email)
     if user:
         token = create_token(user["id"], "password_reset", expire_hours=1)
         from shared.email import send_reset_email
-        background_tasks.add_task(send_reset_email, body.email, user["name"], token)
+        send_reset_email(body.email, user["name"], token)  # runs in daemon thread
     # Always return success to avoid user-enumeration attacks
     return {"message": "Si cet email est associé à un compte, un lien de réinitialisation vous a été envoyé."}
 

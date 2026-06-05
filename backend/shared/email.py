@@ -7,37 +7,57 @@ If SMTP_HOST or SMTP_USER is empty, emails are logged but not sent (dev mode).
 import logging
 import os
 import smtplib
+import threading
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 logger = logging.getLogger(__name__)
 
-SMTP_HOST = os.getenv("SMTP_HOST", "")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASS = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM = os.getenv("SMTP_FROM", "noreply@conformia.mr")
-APP_URL   = os.getenv("APP_URL", "http://localhost:3000")
+APP_URL = os.getenv("APP_URL", "http://localhost:3000")
+
+
+def _smtp_config() -> dict:
+    """Read SMTP config fresh at call time to avoid module-level caching issues."""
+    return {
+        "host": os.getenv("SMTP_HOST", ""),
+        "port": int(os.getenv("SMTP_PORT", "587")),
+        "user": os.getenv("SMTP_USER", ""),
+        "pwd":  os.getenv("SMTP_PASSWORD", ""),
+        "frm":  os.getenv("SMTP_FROM", "noreply@conformia.mr"),
+    }
 
 
 def send_email(to: str, subject: str, html: str) -> None:
-    if not SMTP_HOST or not SMTP_USER:
-        logger.warning("SMTP non configuré — email ignoré (destinataire: %s, objet: %s)", to, subject)
+    cfg = _smtp_config()
+    if not cfg["host"] or not cfg["user"]:
+        print(f"[EMAIL] SMTP non configuré — email ignoré ({to})", flush=True)
         return
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"]    = SMTP_FROM
+        msg["From"]    = cfg["frm"]
         msg["To"]      = to
         msg.attach(MIMEText(html, "html", "utf-8"))
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as srv:
+        with smtplib.SMTP(cfg["host"], cfg["port"], timeout=20) as srv:
             srv.ehlo()
             srv.starttls()
-            srv.login(SMTP_USER, SMTP_PASS)
-            srv.sendmail(SMTP_FROM, to, msg.as_string())
-        logger.info("Email envoyé à %s (%s)", to, subject)
+            srv.ehlo()
+            srv.login(cfg["user"], cfg["pwd"])
+            srv.sendmail(cfg["frm"], to, msg.as_string())
+        print(f"[EMAIL] ✓ Envoyé à {to}", flush=True)
     except Exception as exc:
-        logger.error("Erreur envoi email à %s : %s", to, exc)
+        print(f"[EMAIL] ✗ Erreur SMTP pour {to}: {exc}", flush=True)
+
+
+def _send_in_thread(fn, *args) -> None:
+    """Run fn(*args) in a daemon thread so SMTP never blocks the HTTP response."""
+    def _run():
+        try:
+            fn(*args)
+        except Exception as exc:
+            logger.error("Erreur thread email : %s", exc, exc_info=True)
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
 
 
 # ── Email templates ────────────────────────────────────────────────────────────
@@ -73,7 +93,8 @@ def _base(title: str, body: str) -> str:
 
 
 def send_verification_email(to: str, name: str, token: str) -> None:
-    link = f"{APP_URL}/verify-email?token={token}"
+    app_url = os.getenv("APP_URL", "http://localhost:3000")
+    link = f"{app_url}/verify-email?token={token}"
     body = f"""
       <p style="color:#444;line-height:1.6;">Bonjour <strong>{name}</strong>,</p>
       <p style="color:#444;line-height:1.6;">
@@ -92,11 +113,13 @@ def send_verification_email(to: str, name: str, token: str) -> None:
         Si vous n'avez pas créé de compte, ignorez cet email.
       </p>
     """
-    send_email(to, "ConformIA — Vérifiez votre adresse email", _base("Vérification de votre email", body))
+    _send_in_thread(send_email, to, "ConformIA — Vérifiez votre adresse email",
+                    _base("Vérification de votre email", body))
 
 
 def send_reset_email(to: str, name: str, token: str) -> None:
-    link = f"{APP_URL}/reset-password?token={token}"
+    app_url = os.getenv("APP_URL", "http://localhost:3000")
+    link = f"{app_url}/reset-password?token={token}"
     body = f"""
       <p style="color:#444;line-height:1.6;">Bonjour <strong>{name}</strong>,</p>
       <p style="color:#444;line-height:1.6;">
@@ -115,4 +138,5 @@ def send_reset_email(to: str, name: str, token: str) -> None:
         Si vous n'avez pas fait cette demande, ignorez cet email — votre mot de passe ne changera pas.
       </p>
     """
-    send_email(to, "ConformIA — Réinitialisation de mot de passe", _base("Réinitialisation de mot de passe", body))
+    _send_in_thread(send_email, to, "ConformIA — Réinitialisation de mot de passe",
+                    _base("Réinitialisation de mot de passe", body))
