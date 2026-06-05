@@ -1,60 +1,82 @@
 """
 Authentication routes.
 
-POST /api/auth/register  — public: create a pending account
-POST /api/auth/login     — public: returns JWT
-GET  /api/auth/me        — authenticated: current user profile
-PUT  /api/auth/profile   — authenticated: update name/email
-PUT  /api/auth/password  — authenticated: change password
+POST /api/auth/register          — public: create a pending account + send verification email
+POST /api/auth/login             — public: returns JWT
+GET  /api/auth/verify-email      — public: verify email via token in query param
+POST /api/auth/forgot-password   — public: send password-reset email
+POST /api/auth/reset-password    — public: reset password with token
+GET  /api/auth/me                — authenticated: current user profile
+PUT  /api/auth/profile           — authenticated: update name/email
+PUT  /api/auth/password          — authenticated: change password
 """
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel, EmailStr
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel
 
 from shared.auth import (
     hash_password, verify_password, create_access_token, get_current_user,
 )
 from db.users_crud import (
     create_user, get_user_by_email, get_user_by_id,
-    update_profile, update_password,
+    update_profile, update_password, mark_email_verified,
 )
+from db.tokens_crud import create_token, get_valid_token, delete_token
 
 router = APIRouter()
 
 
+# ── Request bodies ─────────────────────────────────────────────────────────────
+
 class RegisterBody(BaseModel):
-    name: str
-    email: str
+    name:     str
+    email:    str
     password: str
 
 
 class LoginBody(BaseModel):
-    email: str
+    email:    str
     password: str
 
 
 class ProfileBody(BaseModel):
-    name: str
+    name:  str
     email: str
 
 
 class PasswordBody(BaseModel):
     current_password: str
+    new_password:     str
+
+
+class ForgotPasswordBody(BaseModel):
+    email: str
+
+
+class ResetPasswordBody(BaseModel):
+    token:        str
     new_password: str
 
 
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
 def _pub(u: dict) -> dict:
     return {
-        "id":        u["id"],
-        "email":     u["email"],
-        "name":      u["name"],
-        "role":      u["role"],
-        "status":    u["status"],
-        "parent_id": u.get("parent_id"),
+        "id":             u["id"],
+        "email":          u["email"],
+        "name":           u["name"],
+        "role":           u["role"],
+        "status":         u["status"],
+        "parent_id":      u.get("parent_id"),
+        "email_verified": u.get("email_verified", False),
     }
 
 
+# ── Endpoints ──────────────────────────────────────────────────────────────────
+
 @router.post("/register", status_code=201)
-def register(body: RegisterBody):
+def register(body: RegisterBody, background_tasks: BackgroundTasks):
     if len(body.password) < 6:
         raise HTTPException(400, "Le mot de passe doit comporter au moins 6 caractères")
     if get_user_by_email(body.email):
@@ -66,8 +88,11 @@ def register(body: RegisterBody):
         role="user",
         status="pending",
     )
+    token = create_token(user["id"], "email_verification", expire_hours=24)
+    from shared.email import send_verification_email
+    background_tasks.add_task(send_verification_email, body.email, body.name.strip(), token)
     return {
-        "message": "Compte créé. En attente d'approbation par un administrateur.",
+        "message": "Compte créé. Vérifiez votre email puis attendez l'approbation d'un administrateur.",
         "id": user["id"],
     }
 
@@ -78,14 +103,48 @@ def login(body: LoginBody):
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(401, "Email ou mot de passe incorrect")
     token = create_access_token({
-        "sub":       user["id"],
-        "email":     user["email"],
-        "name":      user["name"],
-        "role":      user["role"],
-        "status":    user["status"],
-        "parent_id": user.get("parent_id"),
+        "sub":            user["id"],
+        "email":          user["email"],
+        "name":           user["name"],
+        "role":           user["role"],
+        "status":         user["status"],
+        "parent_id":      user.get("parent_id"),
+        "email_verified": user.get("email_verified", False),
     })
     return {"token": token, "user": _pub(user)}
+
+
+@router.get("/verify-email")
+def verify_email(token: str = Query(...)):
+    record = get_valid_token(token, "email_verification")
+    if not record:
+        raise HTTPException(400, "Lien de vérification invalide ou expiré")
+    mark_email_verified(record["user_id"])
+    delete_token(token)
+    return {"message": "Adresse email vérifiée avec succès"}
+
+
+@router.post("/forgot-password")
+def forgot_password(body: ForgotPasswordBody, background_tasks: BackgroundTasks):
+    user = get_user_by_email(body.email)
+    if user:
+        token = create_token(user["id"], "password_reset", expire_hours=1)
+        from shared.email import send_reset_email
+        background_tasks.add_task(send_reset_email, body.email, user["name"], token)
+    # Always return success to avoid user-enumeration attacks
+    return {"message": "Si cet email est associé à un compte, un lien de réinitialisation vous a été envoyé."}
+
+
+@router.post("/reset-password")
+def reset_password(body: ResetPasswordBody):
+    if len(body.new_password) < 6:
+        raise HTTPException(400, "Le mot de passe doit comporter au moins 6 caractères")
+    record = get_valid_token(body.token, "password_reset")
+    if not record:
+        raise HTTPException(400, "Lien de réinitialisation invalide ou expiré")
+    update_password(record["user_id"], hash_password(body.new_password))
+    delete_token(body.token)
+    return {"message": "Mot de passe réinitialisé avec succès"}
 
 
 @router.get("/me")

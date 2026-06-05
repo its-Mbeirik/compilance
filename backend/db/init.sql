@@ -50,20 +50,36 @@ CREATE INDEX IF NOT EXISTS contracts_user_idx ON contracts (user_id);
 -- Table : utilisateurs (admin, user, sub_user)
 -- -----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS users (
-    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    email         TEXT UNIQUE NOT NULL,
-    name          TEXT NOT NULL,
-    password_hash TEXT NOT NULL,
-    role          TEXT NOT NULL DEFAULT 'user',     -- admin | user | sub_user
-    status        TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected
-    parent_id     UUID REFERENCES users(id) ON DELETE SET NULL,
-    created_at    TIMESTAMPTZ DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ DEFAULT NOW()
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email          TEXT UNIQUE NOT NULL,
+    name           TEXT NOT NULL,
+    password_hash  TEXT NOT NULL,
+    role           TEXT NOT NULL DEFAULT 'user',     -- admin | user | sub_user
+    status         TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected
+    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    parent_id      UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at     TIMESTAMPTZ DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS users_email_idx  ON users (email);
 CREATE INDEX IF NOT EXISTS users_status_idx ON users (status);
 CREATE INDEX IF NOT EXISTS users_parent_idx ON users (parent_id);
+
+-- -----------------------------------------------------------------------
+-- Table : tokens (email verification + password reset)
+-- -----------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_tokens (
+    id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token      TEXT UNIQUE NOT NULL,
+    type       TEXT NOT NULL,              -- 'email_verification' | 'password_reset'
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS user_tokens_token_idx ON user_tokens (token);
+CREATE INDEX IF NOT EXISTS user_tokens_user_idx  ON user_tokens (user_id);
 
 -- -----------------------------------------------------------------------
 -- Table : résultats d'analyse

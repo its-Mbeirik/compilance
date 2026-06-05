@@ -48,10 +48,13 @@ export default function RegisterPage() {
           <div className="w-14 h-14 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-2xl mx-auto mb-4">
             ✓
           </div>
-          <h2 className="text-xl font-semibold text-neutral-900 mb-2">Inscription envoyée</h2>
-          <p className="text-sm text-neutral-500 mb-6">
-            Votre compte est en attente de validation par un administrateur.
-            Vous pourrez vous connecter dès qu&apos;il sera approuvé.
+          <h2 className="text-xl font-semibold text-neutral-900 mb-2">Vérifiez votre email</h2>
+          <p className="text-sm text-neutral-500 mb-3">
+            Un email de vérification vous a été envoyé. Cliquez sur le lien dans l&apos;email
+            pour confirmer votre adresse.
+          </p>
+          <p className="text-sm text-neutral-400 mb-6">
+            Votre compte sera ensuite soumis à l&apos;approbation d&apos;un administrateur.
           </p>
           <Link href="/login" className="text-sm font-medium text-neutral-900 underline underline-offset-2">
             Retour à la connexion

@@ -11,15 +11,16 @@ def _row(r) -> Optional[dict]:
     if not r:
         return None
     return {
-        "id":            str(r[0]),
-        "email":         r[1],
-        "name":          r[2],
-        "password_hash": r[3],
-        "role":          r[4],
-        "status":        r[5],
-        "parent_id":     str(r[6]) if r[6] else None,
-        "created_at":    r[7].isoformat() if r[7] else None,
-        "updated_at":    r[8].isoformat() if r[8] else None,
+        "id":             str(r[0]),
+        "email":          r[1],
+        "name":           r[2],
+        "password_hash":  r[3],
+        "role":           r[4],
+        "status":         r[5],
+        "parent_id":      str(r[6]) if r[6] else None,
+        "created_at":     r[7].isoformat() if r[7] else None,
+        "updated_at":     r[8].isoformat() if r[8] else None,
+        "email_verified": bool(r[9]) if len(r) > 9 else False,
     }
 
 
@@ -124,3 +125,12 @@ def get_stats() -> dict:
             cur.execute("SELECT COUNT(*) FROM users WHERE role = 'sub_user'")
             total_sub_users = cur.fetchone()[0]
     return {"pending": pending, "total_users": total_users, "total_sub_users": total_sub_users}
+
+
+def mark_email_verified(user_id: str) -> None:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE users SET email_verified = TRUE, updated_at = NOW() WHERE id = %s",
+                (user_id,),
+            )
