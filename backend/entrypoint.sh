@@ -23,11 +23,11 @@ except Exception:
 echo "[entrypoint] Articles in DB: $COUNT"
 
 if [ "$COUNT" -lt "100" ]; then
-  echo "[entrypoint] Seeding legal articles (no embeddings — run ingest --seed for vectors)..."
-  python -m ingestion.ingest --seed --no-embed
-  echo "[entrypoint] Seed complete."
+  echo "[entrypoint] Ingestion du corpus juridique (sans embeddings — rapide)..."
+  python -m ingestion.ingest_resources --no-embed
+  echo "[entrypoint] Ingestion terminée."
 else
-  echo "[entrypoint] Articles already present, skipping seed."
+  echo "[entrypoint] Articles déjà présents, ingestion ignorée."
 fi
 
 echo "[entrypoint] Starting uvicorn..."
