@@ -1,0 +1,110 @@
+@startuml sequence
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam sequenceArrowColor #2E4057
+skinparam sequenceArrowThickness 1.5
+skinparam sequenceParticipantBackgroundColor #EBF5FB
+skinparam sequenceParticipantBorderColor #5B9BD5
+skinparam sequenceParticipantFontColor #1E3A5F
+skinparam sequenceLifeLineBorderColor #AAAAAA
+skinparam sequenceGroupBackgroundColor #F5F5F5
+skinparam sequenceGroupBorderColor #AAAAAA
+skinparam sequenceGroupFontColor #444444
+skinparam sequenceGroupBodyBackgroundColor #FAFAFA
+skinparam actorBorderColor #2E4057
+skinparam actorBackgroundColor #EBF5FB
+skinparam titleFontSize 16
+skinparam titleFontStyle bold
+skinparam noteBorderColor #F0A500
+skinparam noteBackgroundColor #FFFDE7
+
+title Diagramme de Séquence — Analyse de conformité d'un contrat
+
+actor "Utilisateur" as USER
+participant "Frontend\n(Next.js)" as FE
+participant "API\n(FastAPI)" as API
+participant "Extracteur\n(LangGraph)" as EXT
+participant "Récupérateur\n(LangGraph)" as RET
+participant "Vérificateur\n(LangGraph)" as VER
+database "PostgreSQL\n+ pgvector" as DB
+participant "DeepSeek\nChat API" as LLM
+participant "BGE-M3\n(local)" as EMB
+
+== Soumission du contrat ==
+
+USER -> FE : Sélectionne et télécharge\nle contrat (PDF/DOCX/TXT)
+FE -> API : POST /api/analyses\n(fichier multipart + JWT Bearer)
+API -> API : Extraction du texte brut\n(pdfplumber / python-docx)
+API -> DB : INSERT contrat\nINSERT analyse (statut = PENDING)
+API --> FE : 202 Accepted\n{ analysis_id }
+
+note over FE : Polling GET /api/analyses/{id}\ntoutes les 2,5 secondes
+
+== Traitement en arrière-plan ==
+
+API -> DB : UPDATE analyse → RUNNING
+
+group Pipeline LangGraph [Exécution séquentielle des noeuds]
+
+  group Noeud Extracteur
+    API -> EXT : texte brut du contrat
+    EXT -> LLM : Prompt d'extraction structurée\n(type contrat, parties, clauses)
+    LLM --> EXT : ContratsExtraction (JSON)\n{type, employeur, employé, clauses[]}
+    EXT --> RET : liste des clauses identifiées
+  end
+
+  group Noeud Récupérateur [Pour chaque clause]
+    RET -> EMB : embed(texte_clause)
+    EMB --> RET : vecteur 1024 dimensions
+    RET -> DB : Recherche cosinus pgvector\n(top 25 articles candidats)
+    DB --> RET : 25 articles + scores
+    RET -> RET : BGE-Reranker-v2-m3\n(sélection top 5)
+    RET --> VER : {clause, top-5 articles} par clause
+  end
+
+  group Noeud Vérificateur [Pour chaque clause]
+    VER -> LLM : Prompt de vérification\n(clause + top-5 articles de référence)
+    LLM --> VER : {verdict, sévérité,\nrecommandation, citations}
+    VER -> VER : Citation Guard\n(validation déterministe :\narticle cité ∈ top-5 ?\ntexte cité ∈ article ?)
+
+    alt Citation invalide (1 seul essai)
+      VER -> LLM : Retry avec feedback\n(liste des articles disponibles)
+      LLM --> VER : verdict corrigé
+    end
+
+    alt Citation toujours invalide
+      VER -> VER : Verdict forcé → EXIGE_REVUE
+    end
+  end
+
+end
+
+VER --> API : findings[] (liste complète)
+API -> DB : UPDATE analyse\n(statut = DONE, findings = JSON)
+
+== Consultation des résultats ==
+
+FE -> API : GET /api/analyses/{id}
+API --> FE : { statut: DONE, findings[], extracted{} }
+FE --> USER : Affichage tableau de conformité\n(verdicts, sévérités, recommandations)
+
+== Génération du rapport ==
+
+USER -> FE : Clique sur "Télécharger PDF"
+FE -> API : GET /api/analyses/{id}/report?fmt=pdf
+API -> API : Rendu HTML (Jinja2)\nConversion PDF (WeasyPrint)
+API --> FE : fichier rapport.pdf
+FE --> USER : Téléchargement automatique
+
+== Correction du contrat ==
+
+USER -> FE : Clique sur "Corriger le contrat"
+FE -> API : POST /api/correct-document/{id}
+API -> LLM : Prompt de correction\n(contrat original + recommandations)
+LLM --> API : contrat corrigé (texte)
+API -> API : Génération DOCX (python-docx)
+API --> FE : contrat_corrige.docx
+FE --> USER : Téléchargement du contrat corrigé
+
+@enduml

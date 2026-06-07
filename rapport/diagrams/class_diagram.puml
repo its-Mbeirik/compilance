@@ -1,0 +1,159 @@
+@startuml class_diagram
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam classBackgroundColor #EBF5FB
+skinparam classBorderColor #5B9BD5
+skinparam classHeaderBackgroundColor #2E4057
+skinparam classHeaderFontColor white
+skinparam classAttributeFontSize 10
+skinparam classStereotypeFontSize 10
+skinparam arrowColor #2E4057
+skinparam titleFontSize 16
+skinparam titleFontStyle bold
+
+title Diagramme de Classes — ConformIA
+
+enum Role {
+  ADMIN
+  USER
+  SUB_USER
+}
+
+enum StatutUtilisateur {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum StatutAnalyse {
+  PENDING
+  RUNNING
+  DONE
+  ERROR
+}
+
+enum Verdict {
+  CONFORME
+  NON_CONFORME
+  EXIGE_REVUE
+}
+
+enum Severite {
+  BLOQUANT
+  MAJEUR
+  MINEUR
+}
+
+enum Juridiction {
+  CODE_TRAVAIL
+  COC
+  CODE_COMMERCE
+  CONVENTION_COLLECTIVE
+  OIT
+}
+
+class Utilisateur {
+  +id : UUID
+  +email : String
+  +nom : String
+  +hashed_password : String
+  +role : Role
+  +statut : StatutUtilisateur
+  +parent_id : UUID {nullable}
+  +email_verifie : Boolean
+  +created_at : DateTime
+  --
+  +est_admin() : Boolean
+  +est_approuve() : Boolean
+}
+
+class TokenEmail {
+  +id : UUID
+  +user_id : UUID
+  +token : String
+  +expires_at : DateTime
+  +utilise : Boolean
+  --
+  +est_expire() : Boolean
+}
+
+class TokenReinitialisation {
+  +id : UUID
+  +user_id : UUID
+  +token : String
+  +expires_at : DateTime
+  +utilise : Boolean
+  --
+  +est_expire() : Boolean
+}
+
+class Contrat {
+  +id : UUID
+  +user_id : UUID
+  +nom_fichier : String
+  +texte_original : Text
+  +created_at : DateTime
+}
+
+class Analyse {
+  +id : UUID
+  +contract_id : UUID
+  +user_id : UUID
+  +statut : StatutAnalyse
+  +findings : JSON
+  +extracted : JSON
+  +error_log : String {nullable}
+  +created_at : DateTime
+  +updated_at : DateTime
+}
+
+class Finding {
+  +id : String
+  +type_clause : String
+  +verdict : Verdict
+  +severite : Severite
+  +description : String
+  +recommandation : String
+  +citations : List<Citation>
+}
+
+class Citation {
+  +article_id : Integer
+  +juridiction : Juridiction
+  +numero_article : String
+  +texte_cite : String
+  +score_pertinence : Float
+}
+
+class ArticleJuridique {
+  +id : Integer
+  +juridiction : Juridiction
+  +nom_code : String
+  +numero_article : String
+  +texte : Text
+  +embedding : Vector(1024)
+  +chemin_hierarchie : String
+  +created_at : DateTime
+}
+
+class HistoriqueChat {
+  +id : UUID
+  +user_id : UUID
+  +analysis_id : UUID {nullable}
+  +messages : JSON
+  +created_at : DateTime
+}
+
+Utilisateur "1" o-- "0..*" Utilisateur : parent_id\n(sous-utilisateurs)
+Utilisateur "1" --> "0..*" TokenEmail : possède
+Utilisateur "1" --> "0..*" TokenReinitialisation : possède
+Utilisateur "1" --> "0..*" Contrat : soumet
+Contrat "1" --> "0..1" Analyse : génère
+Analyse "1" *-- "0..*" Finding : contient
+Finding "1" *-- "0..*" Citation : référence
+Citation "0..*" --> "1" ArticleJuridique : cite
+Utilisateur "1" --> "0..*" HistoriqueChat : possède
+Analyse "1" --> "0..*" HistoriqueChat : associé à
+
+@enduml

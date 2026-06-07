@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth, useApiFetch } from "./contexts/auth";
+import ReactMarkdown from "react-markdown";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -802,8 +803,24 @@ export default function Home() {
               if (m.kind === "bot") return (
                 <div key={i} className="flex items-start gap-3 group">
                   <BotAvatar />
-                  <div dir="auto" className="max-w-[82%] bg-neutral-50 text-neutral-900 text-sm px-4 py-3 rounded-2xl rounded-tl-sm border border-neutral-100 leading-relaxed whitespace-pre-wrap">
-                    {m.text}
+                  <div dir="auto" className="max-w-[82%] bg-neutral-50 text-neutral-900 text-sm px-4 py-3 rounded-2xl rounded-tl-sm border border-neutral-100 leading-relaxed">
+                    <ReactMarkdown
+                      components={{
+                        h1: ({children}) => <h1 className="text-base font-bold mt-3 mb-1 first:mt-0">{children}</h1>,
+                        h2: ({children}) => <h2 className="text-sm font-bold mt-2.5 mb-1 first:mt-0">{children}</h2>,
+                        h3: ({children}) => <h3 className="text-sm font-semibold mt-2 mb-0.5 first:mt-0">{children}</h3>,
+                        p:  ({children}) => <p className="mb-2 last:mb-0">{children}</p>,
+                        strong: ({children}) => <strong className="font-semibold text-neutral-900">{children}</strong>,
+                        em: ({children}) => <em className="italic">{children}</em>,
+                        ul: ({children}) => <ul className="list-disc list-outside pl-4 mb-2 space-y-0.5">{children}</ul>,
+                        ol: ({children}) => <ol className="list-decimal list-outside pl-4 mb-2 space-y-0.5">{children}</ol>,
+                        li: ({children}) => <li className="leading-relaxed">{children}</li>,
+                        code: ({children}) => <code className="bg-neutral-200 text-neutral-800 px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
+                        hr:  () => <hr className="border-neutral-200 my-2" />,
+                      }}
+                    >
+                      {m.text}
+                    </ReactMarkdown>
                   </div>
                   <button
                     onClick={() => speak(m.text, i)}

@@ -1,0 +1,100 @@
+@startuml use_case
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam actorBorderColor #2E4057
+skinparam actorBackgroundColor #EBF5FB
+skinparam actorFontStyle bold
+skinparam usecaseBorderColor #5B9BD5
+skinparam usecaseBackgroundColor #F0F8FF
+skinparam usecaseFontSize 11
+skinparam packageBorderColor #CCCCCC
+skinparam packageBackgroundColor #FAFAFA
+skinparam titleFontSize 16
+skinparam titleFontStyle bold
+skinparam ArrowColor #2E4057
+
+title Diagramme des Cas d'Utilisation — ConformIA
+
+left to right direction
+
+actor "Visiteur" as GUEST
+actor "Sous-utilisateur" as SUBUSER
+actor "Utilisateur" as USER
+actor "Administrateur" as ADMIN
+
+GUEST <|-- SUBUSER
+SUBUSER <|-- USER
+USER <|-- ADMIN
+
+rectangle "Système ConformIA" {
+
+  package "Authentification & Compte" {
+    usecase "S'inscrire" as UC_REGISTER
+    usecase "Vérifier l'adresse email" as UC_VERIFY
+    usecase "Se connecter" as UC_LOGIN
+    usecase "Réinitialiser le mot de passe" as UC_RESET
+    usecase "Modifier le profil" as UC_PROFILE
+    usecase "Changer le mot de passe" as UC_PWD
+  }
+
+  package "Analyse de conformité" {
+    usecase "Télécharger un contrat\n(PDF / DOCX / TXT)" as UC_UPLOAD
+    usecase "Consulter la liste\ndes analyses" as UC_LIST
+    usecase "Voir les résultats\n(findings + verdicts)" as UC_VIEW
+    usecase "Télécharger le rapport\n(PDF / HTML)" as UC_REPORT
+  }
+
+  package "Assistant Juridique" {
+    usecase "Chat juridique général" as UC_CHAT
+    usecase "Chat contextuel\nsur une analyse" as UC_CHAT_CTX
+    usecase "Saisie vocale\n(Français / Arabe)" as UC_VOICE
+  }
+
+  package "Génération de documents" {
+    usecase "Générer un contrat\n(description → DOCX)" as UC_GENERATE
+    usecase "Corriger un contrat\n(appliquer recommandations)" as UC_CORRECT
+  }
+
+  package "Gestion des sous-utilisateurs" {
+    usecase "Créer un sous-utilisateur" as UC_CREATE_SUB
+    usecase "Consulter ses sous-utilisateurs" as UC_LIST_SUB
+  }
+
+  package "Administration" {
+    usecase "Approuver / Rejeter\nles inscriptions" as UC_APPROVE
+    usecase "Consulter les statistiques\n(en attente, total)" as UC_STATS
+    usecase "Gérer tous les utilisateurs" as UC_USERS
+  }
+}
+
+GUEST --> UC_REGISTER
+GUEST --> UC_VERIFY
+GUEST --> UC_LOGIN
+GUEST --> UC_RESET
+
+SUBUSER --> UC_UPLOAD
+SUBUSER --> UC_LIST
+SUBUSER --> UC_VIEW
+SUBUSER --> UC_REPORT
+SUBUSER --> UC_CHAT
+SUBUSER --> UC_CHAT_CTX
+SUBUSER --> UC_VOICE
+SUBUSER --> UC_GENERATE
+SUBUSER --> UC_CORRECT
+SUBUSER --> UC_PROFILE
+SUBUSER --> UC_PWD
+
+USER --> UC_CREATE_SUB
+USER --> UC_LIST_SUB
+
+ADMIN --> UC_APPROVE
+ADMIN --> UC_STATS
+ADMIN --> UC_USERS
+
+UC_CHAT ..> UC_VOICE : <<include>>
+UC_CHAT_CTX ..> UC_VOICE : <<include>>
+UC_VIEW ..> UC_REPORT : <<extend>>
+UC_VIEW ..> UC_CORRECT : <<extend>>
+
+@enduml

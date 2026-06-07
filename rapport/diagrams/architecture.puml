@@ -1,0 +1,70 @@
+@startuml architecture
+skinparam backgroundColor white
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam ArrowColor #2E4057
+skinparam componentBackgroundColor #EBF5FB
+skinparam componentBorderColor #5B9BD5
+skinparam componentFontColor #1E3A5F
+skinparam packageBackgroundColor #F9FAFB
+skinparam packageBorderColor #CCCCCC
+skinparam packageFontStyle bold
+skinparam titleFontSize 16
+skinparam titleFontStyle bold
+
+title Architecture Générale — ConformIA
+
+actor "Utilisateur" as USER #E8F4F8
+
+package "Navigateur Web" #FEFEFE {
+  component "Interface Utilisateur\nNext.js 15 + React 19\nTypeScript + Tailwind CSS" as FRONTEND
+}
+
+package "Serveur Backend — FastAPI (Python 3.11)" #F0F8FF {
+  component "API RESTful\n/api/analyses\n/api/auth\n/api/chat\n/api/users" as API
+
+  package "Pipeline LangGraph" #E8F4F8 {
+    component "Extracteur\n[DeepSeek Chat]\nExtraction structurée\ndes clauses" as EXT
+    component "Récupérateur\n[BGE-M3 + pgvector\n+ BGE-Reranker-v2-m3]\nRecherche top-25 → top-5" as RET
+    component "Vérificateur\n[DeepSeek Chat\n+ Citation Guard]\nValidation + verdicts" as VER
+  }
+
+  component "Génération de documents\n[python-docx + Jinja2]\nContrats DOCX" as DOCGEN
+  component "Génération de rapports\n[WeasyPrint]\nRapports PDF/HTML" as REPORT
+  component "Authentification\n[JWT HS256 + bcrypt]\nEmail + Reset password" as AUTH
+}
+
+package "Couche de données" #FFF9F0 {
+  database "PostgreSQL 16\n+ pgvector\nArticles juridiques (2 176)\nAnalyses, Utilisateurs" as PG
+  database "Redis 7\nCache & Sessions" as REDIS
+}
+
+package "Services IA" #F0FFF0 {
+  component "DeepSeek Chat API\n(LLM distant)" as LLM
+  component "BAAI/bge-m3\nEmbeddings 1024 dims\n(local)" as EMB
+  component "BAAI/bge-reranker-v2-m3\nRéordonnancement\n(local)" as RNK
+}
+
+USER --> FRONTEND : HTTPS
+FRONTEND --> API : REST + JWT Bearer
+FRONTEND --> AUTH : Login / Register\nReset password
+
+API --> EXT : Texte du contrat
+EXT --> RET : Clauses extraites
+RET --> VER : Articles + clauses
+VER --> API : Findings
+
+EXT --> LLM : Extraction structurée
+VER --> LLM : Vérification clauses
+
+RET --> EMB : Embed clauses
+RET --> RNK : Réordonnancement
+RET --> PG : Recherche vectorielle (pgvector)
+
+VER --> PG : Sauvegarde findings
+API --> PG : CRUD analyses/contrats/utilisateurs
+API --> REDIS : Cache
+API --> DOCGEN : Générer contrat
+API --> REPORT : Générer rapport PDF
+
+@enduml
