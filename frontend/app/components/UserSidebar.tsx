@@ -4,12 +4,12 @@ import { useAuth, AuthUser } from "../contexts/auth";
 
 const ROLE_LABEL: Record<string, string> = {
   user:     "Utilisateur",
-  sub_user: "Sous-utilisateur",
+  sub_user: "Assistant",
 };
 
 function navLinks(user: AuthUser) {
   const links = [{ href: "/", label: "Chat juridique" }];
-  if (user.role === "user") links.push({ href: "/sub-users", label: "Sous-utilisateurs" });
+  if (user.role === "user") links.push({ href: "/sub-users", label: "Assistants" });
   links.push({ href: "/settings", label: "Paramètres" });
   return links;
 }

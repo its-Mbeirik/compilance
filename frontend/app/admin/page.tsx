@@ -36,7 +36,7 @@ export default function AdminDashboard() {
       href: "/admin/users",
     },
     {
-      label: "Sous-utilisateurs",
+      label: "Assistants",
       value: stats?.total_sub_users ?? "—",
       bg: "bg-neutral-50 border-neutral-200",
       text: "text-neutral-700",

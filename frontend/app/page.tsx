@@ -16,12 +16,28 @@ type Finding = {
   citation_valid: boolean;
 };
 
+type Extracted = {
+  type_contrat:         string;
+  employeur:            string;
+  employe:              string;
+  poste:                string;
+  date_debut:           string | null;
+  date_fin:             string | null;
+  duree_mois:           number | null;
+  salaire_mensuel_fcfa: number | null;
+  periode_essai_mois:   number | null;
+  est_cadre:            boolean;
+  age_employe:          number | null;
+  visa_inspection:      boolean | null;
+};
+
 type Analysis = {
   id: string;
   status: string;
   jurisdiction: string;
   doc_type: string;
   findings: Finding[];
+  extracted: Extracted | null;
   error_log: string | null;
   created_at?: string;
 };
@@ -34,12 +50,34 @@ type HistoryItem = {
 };
 
 type Msg =
-  | { kind: "user";     text: string }
-  | { kind: "bot";      text: string }
+  | { kind: "user";      text: string }
+  | { kind: "bot";       text: string }
   | { kind: "thinking" }
-  | { kind: "result";   analysis: Analysis }
-  | { kind: "document"; filename: string; blobUrl: string }
-  | { kind: "error";    text: string };
+  | { kind: "result";    analysis: Analysis }
+  | { kind: "document";  filename: string; blobUrl: string }
+  | { kind: "file_ref";  filename: string; analysisId: string }
+  | { kind: "error";     text: string };
+
+// ── localStorage session helpers ───────────────────────────────────────────
+
+const CHAT_KEY = (id: string) => `conformia_chat_${id}`;
+const FILE_KEY = (id: string) => `conformia_file_${id}`;
+
+function saveSession(id: string, msgs: Msg[]) {
+  try {
+    const saveable = msgs.filter(
+      (m) => m.kind !== "thinking" && m.kind !== "document"
+    );
+    localStorage.setItem(CHAT_KEY(id), JSON.stringify(saveable));
+  } catch { /* localStorage full or unavailable */ }
+}
+
+function loadSession(id: string): Msg[] | null {
+  try {
+    const raw = localStorage.getItem(CHAT_KEY(id));
+    return raw ? (JSON.parse(raw) as Msg[]) : null;
+  } catch { return null; }
+}
 
 // ── Verdict / severity styles ──────────────────────────────────────────────
 
@@ -54,9 +92,111 @@ const SEVERITY_STYLE: Record<string, string> = {
   MINEUR:   "bg-neutral-200 text-neutral-600",
 };
 
+// ── Contract bilan ────────────────────────────────────────────────────────
+
+const CONTRACT_TYPE_COLOR: Record<string, string> = {
+  CDI:   "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+  CDD:   "bg-blue-50 text-blue-700 ring-1 ring-blue-200",
+  CTT:   "bg-purple-50 text-purple-700 ring-1 ring-purple-200",
+  Stage: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
+  Autre: "bg-neutral-100 text-neutral-600 ring-1 ring-neutral-200",
+};
+
+function ContractBilan({ extracted }: { extracted: Extracted }) {
+  const fmtDate = (d: string | null): string | null => {
+    if (!d || d.trim() === "") return null;
+    // Try ISO and common formats
+    const parsed = new Date(d);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+    }
+    // Try DD/MM/YYYY (common in French contracts)
+    const dmy = d.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+    if (dmy) {
+      const parsed2 = new Date(`${dmy[3]}-${dmy[2].padStart(2,"0")}-${dmy[1].padStart(2,"0")}`);
+      if (!isNaN(parsed2.getTime()))
+        return parsed2.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+    }
+    // Return raw string if it looks like something meaningful, else null
+    return d.length > 2 ? d : null;
+  };
+
+  const fmtSalaire = (v: number | null) =>
+    v != null ? new Intl.NumberFormat("fr-FR").format(v) + " MRU" : null;
+
+  const rows: { label: string; value: string | null }[] = [
+    { label: "Employeur",      value: extracted.employeur || null },
+    { label: "Employé",        value: extracted.employe   || null },
+    { label: "Poste",          value: extracted.poste     || null },
+    { label: "Date de début",  value: fmtDate(extracted.date_debut) ?? (extracted.date_debut ? "Non spécifié" : null) },
+    ...(extracted.date_fin != null
+      ? [{ label: "Date de fin", value: fmtDate(extracted.date_fin) ?? "Non spécifié" }]
+      : []),
+    ...(extracted.duree_mois != null
+      ? [{ label: "Durée", value: `${extracted.duree_mois} mois` }]
+      : []),
+    { label: "Salaire mensuel",   value: fmtSalaire(extracted.salaire_mensuel_fcfa) },
+    ...(extracted.periode_essai_mois != null
+      ? [{ label: "Période d'essai", value: `${extracted.periode_essai_mois} mois` }]
+      : []),
+    ...(extracted.age_employe != null
+      ? [{ label: "Âge de l'employé", value: `${extracted.age_employe} ans` }]
+      : []),
+    ...(extracted.visa_inspection != null
+      ? [{ label: "Visa inspection", value: extracted.visa_inspection ? "Oui" : "Non" }]
+      : []),
+  ].filter((r) => r.value !== null);
+
+  const typeColor = CONTRACT_TYPE_COLOR[extracted.type_contrat] ?? CONTRACT_TYPE_COLOR["Autre"];
+
+  return (
+    <div className="mb-4 pb-4 border-b border-neutral-100">
+      <div className="flex items-center gap-2 mb-3">
+        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${typeColor}`}>
+          {extracted.type_contrat}
+        </span>
+        {extracted.est_cadre && (
+          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-500">
+            Cadre
+          </span>
+        )}
+        <span className="text-xs text-neutral-400 font-medium ml-auto">Résumé du contrat</span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+        {rows.map(({ label, value }) => (
+          <div key={label} className="flex items-baseline gap-1.5 min-w-0">
+            <span className="text-[11px] text-neutral-400 shrink-0 w-32">{label}</span>
+            <span className="text-xs font-medium text-neutral-800 truncate">{value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Abbreviate long article IDs for display: "MAURITANIA_LABOR-CODE_TRAVAIL_MR-10" → "Art. 10 · CT"
+const CODE_ABBREV: Record<string, string> = {
+  CODE_TRAVAIL_MR:    "CT",
+  COC_MR:             "COC",
+  CODE_COMMERCE_MR:   "CC",
+  CONV_COLLECTIVE:    "CCG",
+  CONVENTIONS_ILO:    "OIT",
+};
+function abbreviateArticleId(id: string): string {
+  // Expected format: JURISDICTION-CODE_NAME-ARTICLE_NUMBER
+  const parts = id.split("-");
+  if (parts.length < 3) return id;
+  const articleNum = parts[parts.length - 1];
+  // Code name is everything between first and last dash segment
+  const codeParts = parts.slice(1, parts.length - 1).join("_");
+  const abbrev = CODE_ABBREV[codeParts] ?? codeParts.replace("MAURITANIA_LABOR_", "");
+  return `Art. ${articleNum} · ${abbrev}`;
+}
+
 // ── Findings card ──────────────────────────────────────────────────────────
 
-function FindingsCard({ analysis }: { analysis: Analysis }) {
+function FindingsCard({ analysis, onDownloadPdf }: { analysis: Analysis; onDownloadPdf: () => void }) {
   const counts = {
     CONFORME:     analysis.findings.filter((f) => f.verdict === "CONFORME").length,
     NON_CONFORME: analysis.findings.filter((f) => f.verdict === "NON_CONFORME").length,
@@ -81,18 +221,24 @@ function FindingsCard({ analysis }: { analysis: Analysis }) {
             ) : null
           )}
         </div>
-        <a
-          href={`/api/analyses/${analysis.id}/report?fmt=pdf`}
-          target="_blank"
+        <button
+          onClick={onDownloadPdf}
           className="ml-auto text-xs text-neutral-500 hover:text-neutral-900 font-medium flex items-center gap-1 shrink-0 underline underline-offset-2"
         >
           Rapport PDF
-        </a>
+        </button>
       </div>
 
       {analysis.findings.length > 0 ? (
-        <div className="overflow-x-auto rounded-lg border border-neutral-200">
-          <table className="w-full text-xs">
+        <div className="overflow-x-auto rounded-lg border border-neutral-200 max-w-full">
+          <table className="w-full text-xs table-fixed">
+            <colgroup>
+              <col className="w-20" />
+              <col className="w-28" />
+              <col className="w-24" />
+              <col className="w-28" />
+              <col />
+            </colgroup>
             <thead>
               <tr className="bg-neutral-50 text-neutral-500 font-medium border-b border-neutral-200">
                 <th className="px-3 py-2 text-left">Clause</th>
@@ -105,7 +251,7 @@ function FindingsCard({ analysis }: { analysis: Analysis }) {
             <tbody className="bg-white divide-y divide-neutral-100">
               {analysis.findings.map((f, i) => (
                 <tr key={i} className="hover:bg-neutral-50 align-top transition-colors">
-                  <td className="px-3 py-2.5 font-mono text-neutral-400 whitespace-nowrap">{f.clause_id}</td>
+                  <td className="px-3 py-2.5 font-mono text-neutral-400 truncate">{f.clause_id}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap">
                     <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${VERDICT_STYLE[f.verdict]}`}>
                       {f.verdict}
@@ -118,8 +264,13 @@ function FindingsCard({ analysis }: { analysis: Analysis }) {
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 font-mono text-neutral-700 whitespace-nowrap font-semibold">{f.cited_article_id}</td>
-                  <td className="px-3 py-2.5 text-neutral-600 max-w-xs">
+                  <td
+                    className="px-3 py-2.5 font-mono text-neutral-700 font-semibold truncate"
+                    title={f.cited_article_id}
+                  >
+                    {abbreviateArticleId(f.cited_article_id)}
+                  </td>
+                  <td className="px-3 py-2.5 text-neutral-600">
                     {f.recommendation ?? <span className="text-neutral-300">—</span>}
                   </td>
                 </tr>
@@ -310,12 +461,12 @@ function Sidebar({
         <div className="px-4 py-4 border-t border-white/10 shrink-0">
           <p className="text-white/40 text-xs truncate mb-1">{userName}</p>
           <div className="text-[10px] bg-white/10 text-white/50 px-2 py-0.5 rounded-full w-fit mb-2">
-            {userRole === "sub_user" ? "Sous-utilisateur" : "Utilisateur"}
+            {userRole === "sub_user" ? "Assistant" : "Utilisateur"}
           </div>
           <div className="flex flex-col gap-1">
             {userRole === "user" && (
               <a href="/sub-users" className="text-xs text-white/40 hover:text-white transition-colors">
-                Sous-utilisateurs
+                Assistants
               </a>
             )}
             <a href="/settings" className="text-xs text-white/40 hover:text-white transition-colors">
@@ -425,6 +576,29 @@ export default function Home() {
     window.speechSynthesis.speak(utt);
   }, [speakingIndex]);
 
+  // ── Persist messages to localStorage ────────────────────────────────────
+  useEffect(() => {
+    if (!analysisId || messages.length <= 1) return;
+    saveSession(analysisId, messages);
+  }, [messages, analysisId]);
+
+  // ── Download original uploaded file ──────────────────────────────────────
+  const handleDownloadFile = useCallback(async (aid: string, filename: string) => {
+    try {
+      const res = await apiFetch(`/api/files/${aid}`);
+      if (!res.ok) throw new Error("Fichier non disponible");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("Impossible de télécharger le fichier original.");
+    }
+  }, [apiFetch]);
+
   // Fetch conversation history
   const refreshHistory = useCallback(async () => {
     try {
@@ -453,10 +627,14 @@ export default function Home() {
       const data: Analysis = await res.json();
       if (data.status === "done") {
         setAnalysis(data);
+        const ext = data.extracted;
+        const bilanLine = ext?.type_contrat
+          ? `Contrat **${ext.type_contrat}** — ${ext.employeur} / ${ext.employe}.`
+          : "";
         setMessages((prev) => [
           ...prev.filter((m) => m.kind !== "thinking"),
           { kind: "result", analysis: data },
-          { kind: "bot", text: "Analyse terminée. Posez-moi vos questions sur ces résultats." },
+          { kind: "bot", text: `${bilanLine ? bilanLine + "\n\n" : ""}Analyse terminée. Posez-moi vos questions sur ces résultats.`.trim() },
         ]);
         setBusy(false);
         refreshHistory();
@@ -485,10 +663,26 @@ export default function Home() {
     setText("");
     setAnalysisId(item.analysis_id);
 
-    setMessages([
-      WELCOME[lang],
-      { kind: "user", text: `📄 ${item.doc_type}` },
-    ]);
+    // ── Try to restore full session from localStorage ──────────────────────
+    const stored = loadSession(item.analysis_id);
+    if (stored && stored.length > 1) {
+      setMessages(stored);
+      try {
+        const res  = await apiFetch(`/api/analyses/${item.analysis_id}`);
+        const data: Analysis = await res.json();
+        setAnalysis(data);
+        if (data.status === "running" || data.status === "pending") {
+          setMessages((prev) => [...prev, { kind: "thinking" }]);
+          setBusy(true);
+          poll(item.analysis_id);
+        }
+      } catch { /* ignore — messages already restored */ }
+      return;
+    }
+
+    // ── Fallback: reconstruct from API ─────────────────────────────────────
+    const filename = localStorage.getItem(FILE_KEY(item.analysis_id)) ?? item.doc_type;
+    setMessages([WELCOME[lang], { kind: "file_ref", filename, analysisId: item.analysis_id }]);
 
     try {
       const res  = await apiFetch(`/api/analyses/${item.analysis_id}`);
@@ -498,20 +692,20 @@ export default function Home() {
       if (data.status === "done") {
         setMessages([
           WELCOME[lang],
-          { kind: "user", text: `📄 ${item.doc_type}` },
+          { kind: "file_ref", filename, analysisId: item.analysis_id },
           { kind: "result", analysis: data },
           { kind: "bot", text: lang === "ar" ? "تم تحميل التحليل. يمكنكم طرح أسئلتكم." : "Analyse chargée. Posez-moi vos questions sur ces résultats." },
         ]);
       } else if (data.status === "error") {
         setMessages([
           WELCOME[lang],
-          { kind: "user", text: `📄 ${item.doc_type}` },
+          { kind: "file_ref", filename, analysisId: item.analysis_id },
           { kind: "error", text: `${lang === "ar" ? "خطأ" : "Erreur"} : ${data.error_log ?? (lang === "ar" ? "غير معروف" : "inconnue")}` },
         ]);
       } else {
         setMessages([
           WELCOME[lang],
-          { kind: "user", text: `📄 ${item.doc_type}` },
+          { kind: "file_ref", filename, analysisId: item.analysis_id },
           { kind: "bot", text: lang === "ar" ? "جارٍ تحليل العقد…" : "Analyse en cours…" },
           { kind: "thinking" },
         ]);
@@ -537,12 +731,12 @@ export default function Home() {
   // ── submit file ───────────────────────────────────────────────────────────
   const submitFile = async () => {
     if (!file || busy) return;
+    const filename    = file.name;
+    const initialText = text.trim();
+
     setBusy(true);
-    setMessages((prev) => [
-      ...prev,
-      { kind: "user", text: `📄 ${file.name}` },
-      { kind: "thinking" },
-    ]);
+    const userText = initialText ? `📄 ${filename}\n${initialText}` : `📄 ${filename}`;
+    setMessages((prev) => [...prev, { kind: "user", text: userText }, { kind: "thinking" }]);
     setFile(null);
     setText("");
 
@@ -554,13 +748,20 @@ export default function Home() {
       const res  = await apiFetch("/api/analyses", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail ?? "Erreur serveur");
-      setAnalysisId(data.analysis_id);
+
+      const aid = data.analysis_id;
+      setAnalysisId(aid);
+      // Persist filename for history restore
+      try { localStorage.setItem(FILE_KEY(aid), filename); } catch { /* ignore */ }
+
       setMessages((prev) => [
         ...prev.filter((m) => m.kind !== "thinking"),
-        { kind: "bot", text: "Analyse du contrat en cours…" },
+        { kind: "file_ref", filename, analysisId: aid },
+        { kind: "bot", text: lang === "ar" ? "جارٍ تحليل العقد…" : "Analyse du contrat en cours…" },
         { kind: "thinking" },
       ]);
-      poll(data.analysis_id);
+      setBusy(false); // Allow typing while analysis runs
+      poll(aid);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setMessages((prev) => [
@@ -667,7 +868,8 @@ export default function Home() {
 
       // ── Normal chat ──────────────────────────────────────────────────────
       } else {
-        const url = analysisId ? `/api/chat/${analysisId}` : "/api/chat";
+        const isAnalysisDone = analysis?.status === "done";
+        const url = (analysisId && isAnalysisDone) ? `/api/chat/${analysisId}` : "/api/chat";
         const res  = await apiFetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -855,6 +1057,26 @@ export default function Home() {
                 </div>
               );
 
+              if (m.kind === "file_ref") return (
+                <div key={i} className="flex justify-end">
+                  <div className="flex items-center gap-2.5 bg-[#111] text-white text-sm px-4 py-2.5 rounded-2xl rounded-br-sm max-w-[78%]">
+                    <svg className="w-4 h-4 shrink-0 text-white/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="truncate text-xs font-medium">{m.filename}</span>
+                    <button
+                      onClick={() => handleDownloadFile(m.analysisId, m.filename)}
+                      title="Télécharger le fichier original"
+                      className="shrink-0 text-white/40 hover:text-white transition-colors ml-1"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              );
+
               if (m.kind === "error") return (
                 <div key={i} className="flex items-start gap-3">
                   <div className="w-7 h-7 rounded-full bg-neutral-200 flex items-center justify-center shrink-0 text-neutral-500 text-xs">✕</div>
@@ -864,14 +1086,34 @@ export default function Home() {
                 </div>
               );
 
-              if (m.kind === "result") return (
-                <div key={i} className="flex items-start gap-3">
-                  <BotAvatar />
-                  <div className="flex-1 min-w-0 bg-white px-4 py-4 rounded-2xl rounded-tl-sm border border-neutral-200 shadow-sm">
-                    <FindingsCard analysis={m.analysis} />
+              if (m.kind === "result") {
+                const handleDownloadPdf = async () => {
+                  try {
+                    const res = await apiFetch(`/api/analyses/${m.analysis.id}/report?fmt=pdf`);
+                    if (!res.ok) throw new Error("Erreur lors du téléchargement");
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `rapport_${m.analysis.id.slice(0, 8)}.pdf`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  } catch {
+                    alert("Impossible de télécharger le rapport PDF.");
+                  }
+                };
+                return (
+                  <div key={i} className="flex items-start gap-3">
+                    <BotAvatar />
+                    <div className="flex-1 min-w-0 overflow-hidden bg-white px-4 py-4 rounded-2xl rounded-tl-sm border border-neutral-200 shadow-sm">
+                      {m.analysis.extracted && Object.keys(m.analysis.extracted).length > 0 && (
+                        <ContractBilan extracted={m.analysis.extracted as Extracted} />
+                      )}
+                      <FindingsCard analysis={m.analysis} onDownloadPdf={handleDownloadPdf} />
+                    </div>
                   </div>
-                </div>
-              );
+                );
+              }
 
               if (m.kind === "document") return (
                 <div key={i} className="flex items-start gap-3">

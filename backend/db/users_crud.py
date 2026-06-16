@@ -127,6 +127,52 @@ def get_stats() -> dict:
     return {"pending": pending, "total_users": total_users, "total_sub_users": total_sub_users}
 
 
+def log_admin_action(
+    admin_id: str,
+    admin_name: str,
+    target_user_id: str,
+    target_name: str,
+    action: str,
+    old_status: Optional[str],
+    new_status: str,
+) -> None:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO admin_action_logs
+                   (admin_id, admin_name, target_user_id, target_name, action, old_status, new_status)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (admin_id, admin_name, target_user_id, target_name, action, old_status, new_status),
+            )
+
+
+def get_admin_logs(limit: int = 100) -> list:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, admin_id, admin_name, target_user_id, target_name,
+                          action, old_status, new_status, created_at
+                   FROM admin_action_logs
+                   ORDER BY created_at DESC
+                   LIMIT %s""",
+                (limit,),
+            )
+            return [
+                {
+                    "id":             str(r[0]),
+                    "admin_id":       str(r[1]),
+                    "admin_name":     r[2],
+                    "target_user_id": str(r[3]),
+                    "target_name":    r[4],
+                    "action":         r[5],
+                    "old_status":     r[6],
+                    "new_status":     r[7],
+                    "created_at":     r[8].isoformat() if r[8] else None,
+                }
+                for r in cur.fetchall()
+            ]
+
+
 def mark_email_verified(user_id: str) -> None:
     with get_connection() as conn:
         with conn.cursor() as cur:

@@ -49,7 +49,7 @@ export default function SubUsersPage() {
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(""); setSuccess("");
-    if (password.length < 6)       { setError("Le mot de passe du sous-utilisateur doit comporter au moins 6 caractères"); return; }
+    if (password.length < 6)       { setError("Le mot de passe de l'assistant doit comporter au moins 6 caractères"); return; }
     if (!parentPassword)           { setError("Veuillez entrer votre mot de passe pour confirmer"); return; }
     setBusy(true);
     try {
@@ -63,7 +63,7 @@ export default function SubUsersPage() {
         throw new Error(err.detail ?? "Erreur serveur");
       }
       setName(""); setEmail(""); setPassword(""); setParentPassword("");
-      setSuccess("Sous-utilisateur créé avec succès.");
+      setSuccess("Assistant créé avec succès.");
       load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Erreur serveur");
@@ -79,17 +79,17 @@ export default function SubUsersPage() {
       <UserSidebar />
 
       <main className="flex-1 overflow-y-auto p-8">
-        <h1 className="text-xl font-semibold text-neutral-900 mb-6">Sous-utilisateurs</h1>
+        <h1 className="text-xl font-semibold text-neutral-900 mb-6">Assistants</h1>
 
         {/* Create form */}
         <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-6 mb-8 max-w-md">
-          <h2 className="text-sm font-semibold text-neutral-900 mb-4">Créer un sous-utilisateur</h2>
+          <h2 className="text-sm font-semibold text-neutral-900 mb-4">Créer un assistant</h2>
           <form onSubmit={create} className="space-y-3">
             {/* Sub-user fields */}
             {[
               { label: "Nom complet",              value: name,     setter: setName,     type: "text",     placeholder: "Prénom Nom",        autocomplete: "off" },
               { label: "Email",                    value: email,    setter: setEmail,    type: "email",    placeholder: "email@exemple.mr",  autocomplete: "off" },
-              { label: "Mot de passe (sous-util.)", value: password, setter: setPassword, type: "password", placeholder: "Min. 6 caractères", autocomplete: "new-password" },
+              { label: "Mot de passe (assistant)", value: password, setter: setPassword, type: "password", placeholder: "Min. 6 caractères", autocomplete: "new-password" },
             ].map(({ label, value, setter, type, placeholder, autocomplete }) => (
               <div key={label}>
                 <label className="block text-xs font-medium text-neutral-700 mb-1">{label}</label>
@@ -129,18 +129,18 @@ export default function SubUsersPage() {
               disabled={busy}
               className="w-full bg-black text-white text-sm font-medium py-2.5 rounded-lg hover:bg-neutral-800 disabled:bg-neutral-300 transition-colors"
             >
-              {busy ? "Création…" : "Créer le sous-utilisateur"}
+              {busy ? "Création…" : "Créer l'assistant"}
             </button>
           </form>
         </div>
 
         {/* List */}
         <h2 className="text-sm font-semibold text-neutral-700 mb-3">
-          Mes sous-utilisateurs ({subUsers.length})
+          Mes assistants ({subUsers.length})
         </h2>
 
         {subUsers.length === 0 ? (
-          <p className="text-sm text-neutral-400">Aucun sous-utilisateur pour le moment.</p>
+          <p className="text-sm text-neutral-400">Aucun assistant pour le moment.</p>
         ) : (
           <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden max-w-2xl">
             <table className="w-full text-sm">

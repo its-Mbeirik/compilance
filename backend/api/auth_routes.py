@@ -102,6 +102,8 @@ def login(body: LoginBody):
     user = get_user_by_email(body.email)
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(401, "Email ou mot de passe incorrect")
+    if user["status"] == "disabled":
+        raise HTTPException(403, "Votre compte a été désactivé. Contactez l'administrateur.")
     token = create_access_token({
         "sub":            user["id"],
         "email":          user["email"],

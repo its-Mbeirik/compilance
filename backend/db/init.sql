@@ -82,6 +82,22 @@ CREATE INDEX IF NOT EXISTS user_tokens_token_idx ON user_tokens (token);
 CREATE INDEX IF NOT EXISTS user_tokens_user_idx  ON user_tokens (user_id);
 
 -- -----------------------------------------------------------------------
+-- Table : journal des actions admin (désactivation / réactivation)
+-- -----------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS admin_action_logs (
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    admin_id       UUID NOT NULL REFERENCES users(id),
+    admin_name     TEXT NOT NULL,
+    target_user_id UUID NOT NULL REFERENCES users(id),
+    target_name    TEXT NOT NULL,
+    action         TEXT NOT NULL,
+    old_status     TEXT,
+    new_status     TEXT NOT NULL,
+    created_at     TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS admin_logs_created_idx ON admin_action_logs (created_at DESC);
+
+-- -----------------------------------------------------------------------
 -- Table : résultats d'analyse
 -- -----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS analyses (

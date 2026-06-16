@@ -25,6 +25,33 @@ app.add_middleware(
 
 
 @app.on_event("startup")
+async def ensure_tables():
+    """Create tables added after initial DB setup (idempotent)."""
+    try:
+        from db.database import get_connection
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS admin_action_logs (
+                        id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                        admin_id       UUID NOT NULL REFERENCES users(id),
+                        admin_name     TEXT NOT NULL,
+                        target_user_id UUID NOT NULL REFERENCES users(id),
+                        target_name    TEXT NOT NULL,
+                        action         TEXT NOT NULL,
+                        old_status     TEXT,
+                        new_status     TEXT NOT NULL,
+                        created_at     TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS admin_logs_created_idx ON admin_action_logs (created_at DESC)"
+                )
+    except Exception as exc:
+        logger.warning("ensure_tables skipped: %s", exc)
+
+
+@app.on_event("startup")
 async def seed_admin():
     """Create the admin account on first startup if it does not exist."""
     try:

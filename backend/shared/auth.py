@@ -60,9 +60,15 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
 
 
 async def require_approved(user: dict = Depends(get_current_user)) -> dict:
-    """Admin is always approved; regular users must have status='approved'."""
+    """Admin is always approved; re-check DB for regular users to catch disabled sessions."""
     if user.get("role") == "admin":
         return user
-    if user.get("status") != "approved":
+    from db.users_crud import get_user_by_id
+    db_user = get_user_by_id(user["sub"])
+    if not db_user:
+        raise HTTPException(status_code=401, detail="Compte introuvable")
+    if db_user["status"] == "disabled":
+        raise HTTPException(status_code=403, detail="Votre compte a été désactivé. Contactez l'administrateur.")
+    if db_user["status"] != "approved":
         raise HTTPException(status_code=403, detail="Compte en attente d'approbation")
     return user

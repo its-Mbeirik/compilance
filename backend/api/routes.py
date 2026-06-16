@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional  # noqa: F401 (kept for future use)
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from api.extract_text import extract_text
@@ -185,6 +185,31 @@ async def get_report(analysis_id: str, fmt: str = "pdf", current: dict = Depends
         logger.warning(f"WeasyPrint indisponible ({exc}), fallback HTML")
         html = generate_html(rec)
         return HTMLResponse(content=html)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/files/{id}  — télécharge le fichier original uploadé
+# ---------------------------------------------------------------------------
+
+_EXT_MEDIA = {
+    ".pdf":  "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc":  "application/msword",
+    ".txt":  "text/plain; charset=utf-8",
+}
+
+@router.get("/files/{analysis_id}")
+async def download_original_file(analysis_id: str, current: dict = Depends(require_approved)):
+    """Retourne le fichier original uploadé pour une analyse donnée."""
+    rec = get_analysis(analysis_id, user_id=current["sub"], user_role=current["role"])
+    if not rec:
+        raise HTTPException(status_code=404, detail="Analyse introuvable")
+    matches = list(UPLOAD_DIR.glob(f"{analysis_id}.*"))
+    if not matches:
+        raise HTTPException(status_code=404, detail="Fichier non disponible sur le serveur")
+    file_path = matches[0]
+    media_type = _EXT_MEDIA.get(file_path.suffix.lower(), "application/octet-stream")
+    return FileResponse(path=str(file_path), media_type=media_type, filename=file_path.name)
 
 
 # ---------------------------------------------------------------------------
