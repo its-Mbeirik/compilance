@@ -31,6 +31,10 @@ from db.crud import (
     link_file_to_analysis,
     get_file_by_id,
     get_upload_file_by_analysis,
+    get_generated_file_by_analysis,
+    create_archive,
+    get_archive_by_analysis,
+    list_archives,
 )
 from shared.auth import require_approved
 
@@ -505,3 +509,58 @@ async def correct_document(analysis_id: str, current: dict = Depends(require_app
     except Exception as exc:
         logger.error(f"correct-document error: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# POST /api/archive/{analysis_id}  — archive original + corrected contract
+# GET  /api/archives               — list user's archives
+# ---------------------------------------------------------------------------
+
+@router.post("/archive/{analysis_id}")
+async def archive_analysis(analysis_id: str, current: dict = Depends(require_approved)):
+    """
+    Save an analysis to the archive: stores the original uploaded contract
+    and the most recently generated corrected document side by side.
+    """
+    rec = get_analysis(analysis_id, user_id=current["sub"], user_role=current["role"])
+    if not rec:
+        raise HTTPException(status_code=404, detail="Analyse introuvable")
+    if rec["status"] != "done":
+        raise HTTPException(status_code=409, detail="L'analyse n'est pas encore terminée")
+
+    # Prevent duplicate archives for the same analysis
+    existing = get_archive_by_analysis(analysis_id, user_id=current["sub"])
+    if existing:
+        raise HTTPException(status_code=409, detail="Ce document est déjà archivé")
+
+    original  = get_upload_file_by_analysis(analysis_id, user_id=current["sub"], user_role=current["role"])
+    corrected = get_generated_file_by_analysis(analysis_id, user_id=current["sub"], user_role=current["role"])
+
+    if not original and not corrected:
+        raise HTTPException(status_code=404, detail="Aucun fichier trouvé pour cette analyse")
+
+    extracted   = rec.get("extracted") or {}
+    type_contrat = extracted.get("type_contrat", "Contrat")
+    employe      = (extracted.get("employe") or "").strip()
+    title        = f"{type_contrat} — {employe}" if employe else type_contrat
+
+    archive_id = create_archive(
+        user_id=current["sub"],
+        analysis_id=analysis_id,
+        title=title,
+        doc_type=rec.get("doc_type", ""),
+        original_file_id=original["id"] if original else None,
+        corrected_file_id=corrected["id"] if corrected else None,
+    )
+    return {
+        "archive_id":    archive_id,
+        "title":         title,
+        "has_original":  original is not None,
+        "has_corrected": corrected is not None,
+    }
+
+
+@router.get("/archives")
+async def get_archives(current: dict = Depends(require_approved)):
+    """List all archives visible to the authenticated user."""
+    return list_archives(user_id=current["sub"], user_role=current["role"])

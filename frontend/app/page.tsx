@@ -500,6 +500,12 @@ function Sidebar({
                 Assistants
               </a>
             )}
+            <a href="/archive" className="text-xs text-white/40 hover:text-white transition-colors flex items-center gap-1.5">
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8l1 12a2 2 0 002 2h8a2 2 0 002-2L19 8" />
+              </svg>
+              Archive
+            </a>
             <a href="/settings" className="text-xs text-white/40 hover:text-white transition-colors">
               Paramètres
             </a>
@@ -856,6 +862,18 @@ export default function Home() {
     );
   };
 
+  const isArchiveRequest = (msg: string) => {
+    if (isQuestion(msg)) return false;
+    const n = stripAccents(msg);
+    return [
+      "archive ce document", "archive ce contrat", "archive le document", "archive le contrat",
+      "archiver ce document", "archiver ce contrat", "archiver le document", "archiver le contrat",
+      "enregistre en archive", "enregistrer en archive",
+      "save to archive", "sauvegarder en archive", "mettre en archive",
+      "ajouter a l archive",
+    ].some((k) => n.includes(k));
+  };
+
   const isRejection = (msg: string) => {
     const n = stripAccents(msg);
     return ["non", "no ", "pas maintenant", "annule", "annuler", "cancel",
@@ -898,6 +916,41 @@ export default function Home() {
             ? "حسناً، تم الإلغاء. يمكنك طلب التصحيح مجدداً في أي وقت."
             : "D'accord, génération annulée. Vous pouvez relancer la correction quand vous le souhaitez." },
         ]);
+        setBusy(false);
+        return;
+      }
+
+      // ── Archive : save contract + corrected version to archive ───────────
+      if (analysisId && isArchiveRequest(msg)) {
+        const res = await apiFetch(`/api/archive/${analysisId}`, { method: "POST" });
+        const data = await res.json();
+        if (res.status === 409 && data.detail?.includes("déjà archivé")) {
+          setMessages((prev) => [
+            ...prev.filter((m) => m.kind !== "thinking"),
+            { kind: "bot", text: lang === "ar"
+              ? "هذا المستند موجود بالفعل في الأرشيف."
+              : "Ce document est déjà présent dans votre archive." },
+          ]);
+        } else if (!res.ok) {
+          setMessages((prev) => [
+            ...prev.filter((m) => m.kind !== "thinking"),
+            { kind: "bot", text: lang === "ar"
+              ? `تعذّر الأرشفة : ${data.detail ?? "خطأ غير معروف"}`
+              : `Impossible d'archiver : ${data.detail ?? "erreur inconnue"}` },
+          ]);
+        } else {
+          const parts = [
+            lang === "ar" ? "تم حفظ المستند في الأرشيف بنجاح." : `Document archivé avec succès : **${data.title}**`,
+            data.has_corrected
+              ? (lang === "ar" ? "النسخة الأصلية والنسخة المصحَّحة محفوظتان." : "La version originale et la version corrigée sont sauvegardées.")
+              : (lang === "ar" ? "النسخة الأصلية محفوظة (لم يتم توليد نسخة مصحَّحة بعد)." : "Version originale sauvegardée (aucune version corrigée générée pour cette analyse)."),
+            lang === "ar" ? "يمكنك العثور عليهما في صفحة الأرشيف." : "Retrouvez-les dans la page **Archive**.",
+          ];
+          setMessages((prev) => [
+            ...prev.filter((m) => m.kind !== "thinking"),
+            { kind: "bot", text: parts.join("\n\n") },
+          ]);
+        }
         setBusy(false);
         return;
       }

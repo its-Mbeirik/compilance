@@ -259,3 +259,121 @@ def get_upload_file_by_analysis(
         "size_bytes":    row[6],
         "file_type":     row[7],
     }
+
+
+def get_generated_file_by_analysis(
+    analysis_id: str,
+    user_id: Optional[str] = None,
+    user_role: Optional[str] = None,
+) -> Optional[dict]:
+    """Return the most recent generated (corrected) file for an analysis."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            if user_role == "admin" or user_id is None:
+                cur.execute(
+                    "SELECT id, analysis_id, user_id, original_name, storage_path, mime_type, size_bytes, file_type "
+                    "FROM files WHERE analysis_id = %s AND file_type = 'generated' ORDER BY created_at DESC LIMIT 1",
+                    (analysis_id,),
+                )
+            else:
+                cur.execute(
+                    "SELECT id, analysis_id, user_id, original_name, storage_path, mime_type, size_bytes, file_type "
+                    "FROM files WHERE analysis_id = %s AND file_type = 'generated' AND user_id = %s "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (analysis_id, user_id),
+                )
+            row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "id":            str(row[0]),
+        "analysis_id":   str(row[1]) if row[1] else None,
+        "user_id":       str(row[2]),
+        "original_name": row[3],
+        "storage_path":  row[4],
+        "mime_type":     row[5],
+        "size_bytes":    row[6],
+        "file_type":     row[7],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Archive helpers
+# ---------------------------------------------------------------------------
+
+def create_archive(
+    user_id: str,
+    analysis_id: Optional[str],
+    title: str,
+    doc_type: str,
+    original_file_id: Optional[str],
+    corrected_file_id: Optional[str],
+) -> str:
+    aid = str(uuid.uuid4())
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO archives
+                   (id, analysis_id, user_id, title, doc_type, original_file_id, corrected_file_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (aid, analysis_id, user_id, title, doc_type, original_file_id, corrected_file_id),
+            )
+    return aid
+
+
+def get_archive_by_analysis(analysis_id: str, user_id: str) -> Optional[dict]:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM archives WHERE analysis_id = %s AND user_id = %s LIMIT 1",
+                (analysis_id, user_id),
+            )
+            row = cur.fetchone()
+    return {"id": str(row[0])} if row else None
+
+
+def list_archives(
+    user_id: Optional[str] = None,
+    user_role: Optional[str] = None,
+) -> list[dict]:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            if user_role == "admin" or user_id is None:
+                cur.execute(
+                    """SELECT a.id, a.analysis_id, a.user_id, a.title, a.doc_type,
+                              a.original_file_id, a.corrected_file_id, a.archived_at,
+                              fo.original_name, fc.original_name
+                       FROM archives a
+                       LEFT JOIN files fo ON fo.id = a.original_file_id
+                       LEFT JOIN files fc ON fc.id = a.corrected_file_id
+                       ORDER BY a.archived_at DESC"""
+                )
+            else:
+                cur.execute(
+                    """SELECT a.id, a.analysis_id, a.user_id, a.title, a.doc_type,
+                              a.original_file_id, a.corrected_file_id, a.archived_at,
+                              fo.original_name, fc.original_name
+                       FROM archives a
+                       LEFT JOIN files fo ON fo.id = a.original_file_id
+                       LEFT JOIN files fc ON fc.id = a.corrected_file_id
+                       WHERE a.user_id = %s
+                          OR a.user_id IN (SELECT id FROM users WHERE parent_id = %s)
+                       ORDER BY a.archived_at DESC""",
+                    (user_id, user_id),
+                )
+            rows = cur.fetchall()
+    return [
+        {
+            "id":                str(r[0]),
+            "analysis_id":       str(r[1]) if r[1] else None,
+            "user_id":           str(r[2]),
+            "title":             r[3],
+            "doc_type":          r[4],
+            "original_file_id":  str(r[5]) if r[5] else None,
+            "corrected_file_id": str(r[6]) if r[6] else None,
+            "archived_at":       r[7].isoformat() if r[7] else None,
+            "original_name":     r[8],
+            "corrected_name":    r[9],
+        }
+        for r in rows
+    ]

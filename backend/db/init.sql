@@ -115,6 +115,22 @@ CREATE INDEX IF NOT EXISTS files_analysis_idx ON files (analysis_id);
 CREATE INDEX IF NOT EXISTS files_user_idx     ON files (user_id);
 
 -- -----------------------------------------------------------------------
+-- Table : archives des contrats (original + version corrigée)
+-- -----------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS archives (
+    id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    analysis_id       UUID,
+    user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title             TEXT,
+    doc_type          TEXT,
+    original_file_id  UUID,
+    corrected_file_id UUID,
+    archived_at       TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS archives_user_idx     ON archives (user_id);
+CREATE INDEX IF NOT EXISTS archives_analysis_idx ON archives (analysis_id);
+
+-- -----------------------------------------------------------------------
 -- Table : résultats d'analyse
 -- -----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS analyses (
