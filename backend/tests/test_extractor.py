@@ -23,7 +23,7 @@ CDD_EXTRACTION = {
     "date_debut": "2026-01-01",
     "date_fin": "2026-07-01",
     "duree_mois": 6,
-    "salaire_mensuel_fcfa": 180_000,
+    "salaire_mensuel_mru": 180_000,
     "periode_essai_mois": 2,
     "est_cadre": False,
     "age_employe": 25,

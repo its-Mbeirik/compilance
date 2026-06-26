@@ -159,3 +159,103 @@ def list_analyses(
         }
         for r in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# File persistence helpers
+# ---------------------------------------------------------------------------
+
+def create_file_record(
+    user_id: str,
+    original_name: str,
+    storage_path: str,
+    mime_type: str,
+    size_bytes: int,
+    file_type: str = "upload",
+    analysis_id: Optional[str] = None,
+) -> str:
+    fid = str(uuid.uuid4())
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO files
+                   (id, analysis_id, user_id, original_name, storage_path, mime_type, size_bytes, file_type)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                (fid, analysis_id, user_id, original_name, storage_path, mime_type, size_bytes, file_type),
+            )
+    return fid
+
+
+def link_file_to_analysis(file_id: str, analysis_id: str) -> None:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE files SET analysis_id = %s WHERE id = %s", (analysis_id, file_id))
+
+
+def get_file_by_id(
+    file_id: str,
+    user_id: Optional[str] = None,
+    user_role: Optional[str] = None,
+) -> Optional[dict]:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            if user_role == "admin" or user_id is None:
+                cur.execute(
+                    "SELECT id, analysis_id, user_id, original_name, storage_path, mime_type, size_bytes, file_type "
+                    "FROM files WHERE id = %s",
+                    (file_id,),
+                )
+            else:
+                cur.execute(
+                    "SELECT id, analysis_id, user_id, original_name, storage_path, mime_type, size_bytes, file_type "
+                    "FROM files WHERE id = %s AND user_id = %s",
+                    (file_id, user_id),
+                )
+            row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "id":            str(row[0]),
+        "analysis_id":   str(row[1]) if row[1] else None,
+        "user_id":       str(row[2]),
+        "original_name": row[3],
+        "storage_path":  row[4],
+        "mime_type":     row[5],
+        "size_bytes":    row[6],
+        "file_type":     row[7],
+    }
+
+
+def get_upload_file_by_analysis(
+    analysis_id: str,
+    user_id: Optional[str] = None,
+    user_role: Optional[str] = None,
+) -> Optional[dict]:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            if user_role == "admin" or user_id is None:
+                cur.execute(
+                    "SELECT id, analysis_id, user_id, original_name, storage_path, mime_type, size_bytes, file_type "
+                    "FROM files WHERE analysis_id = %s AND file_type = 'upload' ORDER BY created_at LIMIT 1",
+                    (analysis_id,),
+                )
+            else:
+                cur.execute(
+                    "SELECT id, analysis_id, user_id, original_name, storage_path, mime_type, size_bytes, file_type "
+                    "FROM files WHERE analysis_id = %s AND file_type = 'upload' AND user_id = %s "
+                    "ORDER BY created_at LIMIT 1",
+                    (analysis_id, user_id),
+                )
+            row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "id":            str(row[0]),
+        "analysis_id":   str(row[1]) if row[1] else None,
+        "user_id":       str(row[2]),
+        "original_name": row[3],
+        "storage_path":  row[4],
+        "mime_type":     row[5],
+        "size_bytes":    row[6],
+        "file_type":     row[7],
+    }

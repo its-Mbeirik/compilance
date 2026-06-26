@@ -98,6 +98,23 @@ CREATE TABLE IF NOT EXISTS admin_action_logs (
 CREATE INDEX IF NOT EXISTS admin_logs_created_idx ON admin_action_logs (created_at DESC);
 
 -- -----------------------------------------------------------------------
+-- Table : fichiers (uploadés et générés)
+-- -----------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS files (
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    analysis_id   UUID,                              -- set after analysis is created
+    user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    original_name TEXT NOT NULL,
+    storage_path  TEXT NOT NULL,
+    mime_type     TEXT NOT NULL DEFAULT 'application/octet-stream',
+    size_bytes    BIGINT NOT NULL DEFAULT 0,
+    file_type     TEXT NOT NULL DEFAULT 'upload',    -- 'upload' | 'generated'
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS files_analysis_idx ON files (analysis_id);
+CREATE INDEX IF NOT EXISTS files_user_idx     ON files (user_id);
+
+-- -----------------------------------------------------------------------
 -- Table : résultats d'analyse
 -- -----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS analyses (

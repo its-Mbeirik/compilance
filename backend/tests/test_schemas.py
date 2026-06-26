@@ -48,7 +48,7 @@ def test_contrat_travail_cdi():
         employeur="Société Minière MR",
         employe="Fatima Mint Ahmed",
         poste="Ingénieure",
-        salaire_mensuel_fcfa=150_000,
+        salaire_mensuel_mru=150_000,
         periode_essai_mois=3,
         est_cadre=False,
         age_employe=25,
@@ -68,7 +68,7 @@ def test_contrat_travail_cdd_avec_visa():
         employe="Mohamed Vall",
         poste="Technicien",
         duree_mois=6,
-        salaire_mensuel_fcfa=80_000,
+        salaire_mensuel_mru=80_000,
         periode_essai_mois=1,
         visa_inspection=True,   # Art. 18: CDD > 3 mois → visa obligatoire
         age_employe=20,

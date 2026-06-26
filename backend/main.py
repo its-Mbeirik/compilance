@@ -47,6 +47,21 @@ async def ensure_tables():
                 cur.execute(
                     "CREATE INDEX IF NOT EXISTS admin_logs_created_idx ON admin_action_logs (created_at DESC)"
                 )
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS files (
+                        id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                        analysis_id   UUID,
+                        user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        original_name TEXT NOT NULL,
+                        storage_path  TEXT NOT NULL,
+                        mime_type     TEXT NOT NULL DEFAULT 'application/octet-stream',
+                        size_bytes    BIGINT NOT NULL DEFAULT 0,
+                        file_type     TEXT NOT NULL DEFAULT 'upload',
+                        created_at    TIMESTAMPTZ DEFAULT NOW()
+                    )
+                """)
+                cur.execute("CREATE INDEX IF NOT EXISTS files_analysis_idx ON files (analysis_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS files_user_idx ON files (user_id)")
     except Exception as exc:
         logger.warning("ensure_tables skipped: %s", exc)
 

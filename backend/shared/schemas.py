@@ -91,7 +91,7 @@ class ContratsExtraction(BaseModel):
     date_debut:           Optional[str] = None
     date_fin:             Optional[str] = None       # CDD uniquement
     duree_mois:           Optional[int] = Field(None, ge=0)
-    salaire_mensuel_fcfa: Optional[float] = Field(None, ge=0)
+    salaire_mensuel_mru:  Optional[float] = Field(None, ge=0)
     periode_essai_mois:   Optional[int] = Field(None, ge=0,
         description="Art. 10: max 6 mois (tous), 12 mois (cadres)")
     est_cadre:            bool = False

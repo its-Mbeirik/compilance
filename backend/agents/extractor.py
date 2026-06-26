@@ -32,7 +32,7 @@ Pour la liste 'clauses', génère une entrée par point de conformité important
 avec le texte EXACT tel qu'il apparaît dans le document.
 
 Règles d'extraction importantes :
-- salaire_mensuel_fcfa : montant MENSUEL BRUT en MRU (Ouguiya mauritanien), \
+- salaire_mensuel_mru : montant MENSUEL BRUT en MRU (Ouguiya mauritanien), \
   tel qu'écrit dans le document ; si annuel divise par 12, si journalier multiplie par 26.
 - date_debut / date_fin : format ISO YYYY-MM-DD si possible, sinon texte exact du document.
 - Si une information n'est pas explicitement mentionnée dans le document, laisse le champ à null."""
@@ -41,7 +41,7 @@ _FEW_SHOT_FR = """\
 Exemple — CDD :
 "M. Ba est engagé comme Développeur pour 6 mois. Période d'essai : 2 mois. \
 Salaire brut mensuel : 180 000 MRU."
-→ type_contrat="CDD", duree_mois=6, periode_essai_mois=2, salaire_mensuel_fcfa=180000
+→ type_contrat="CDD", duree_mois=6, periode_essai_mois=2, salaire_mensuel_mru=180000
 
 Exemple — date :
 "à compter du 1er janvier 2025" → date_debut="2025-01-01"
@@ -58,7 +58,7 @@ _SYSTEM_LABOR_AR = """\
 مع النص الحرفي كما يظهر في الوثيقة.
 
 قواعد الاستخراج المهمة:
-- salaire_mensuel_fcfa: المبلغ الشهري الإجمالي بالأوقية الموريتانية (MRU) كما هو مكتوب في الوثيقة؛ \
+- salaire_mensuel_mru: المبلغ الشهري الإجمالي بالأوقية الموريتانية (MRU) كما هو مكتوب في الوثيقة؛ \
   إذا كان سنوياً قسِّمه على 12، وإذا كان يومياً اضربه في 26.
 - date_debut / date_fin: بصيغة ISO YYYY-MM-DD إن أمكن، وإلا النص الحرفي من الوثيقة.
 - إذا لم تُذكر معلومة صراحةً في الوثيقة، اتركها null."""
@@ -66,7 +66,7 @@ _SYSTEM_LABOR_AR = """\
 _FEW_SHOT_AR = """\
 مثال — عقد محدد المدة:
 "يُعيَّن السيد با بوصف مطوّر ويب لمدة 6 أشهر. فترة التجربة: شهران. الراتب الشهري الإجمالي: 180,000 أوقية."
-→ type_contrat="CDD"، duree_mois=6، periode_essai_mois=2، salaire_mensuel_fcfa=180000
+→ type_contrat="CDD"، duree_mois=6، periode_essai_mois=2، salaire_mensuel_mru=180000
 
 مثال — تاريخ البدء:
 "اعتباراً من الأول من يناير 2025" → date_debut="2025-01-01"

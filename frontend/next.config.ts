@@ -11,6 +11,16 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async headers() {
+    return [
+      {
+        source: "/api/:path*",
+        headers: [
+          { key: "Access-Control-Expose-Headers", value: "X-File-Id, Content-Disposition" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

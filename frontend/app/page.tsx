@@ -24,7 +24,7 @@ type Extracted = {
   date_debut:           string | null;
   date_fin:             string | null;
   duree_mois:           number | null;
-  salaire_mensuel_fcfa: number | null;
+  salaire_mensuel_mru: number | null;
   periode_essai_mois:   number | null;
   est_cadre:            boolean;
   age_employe:          number | null;
@@ -54,8 +54,8 @@ type Msg =
   | { kind: "bot";       text: string }
   | { kind: "thinking" }
   | { kind: "result";    analysis: Analysis }
-  | { kind: "document";  filename: string; blobUrl: string }
-  | { kind: "file_ref";  filename: string; analysisId: string }
+  | { kind: "document";  filename: string; blobUrl?: string; fileId?: string }
+  | { kind: "file_ref";  filename: string; analysisId: string; fileId?: string }
   | { kind: "error";     text: string };
 
 // ── localStorage session helpers ───────────────────────────────────────────
@@ -65,8 +65,11 @@ const FILE_KEY = (id: string) => `conformia_file_${id}`;
 
 function saveSession(id: string, msgs: Msg[]) {
   try {
+    // Exclude thinking bubbles and blob-only documents (blobs die on refresh).
+    // Documents with a server-side fileId are safe to persist.
     const saveable = msgs.filter(
-      (m) => m.kind !== "thinking" && m.kind !== "document"
+      (m) => m.kind !== "thinking" &&
+             !(m.kind === "document" && !m.fileId)
     );
     localStorage.setItem(CHAT_KEY(id), JSON.stringify(saveable));
   } catch { /* localStorage full or unavailable */ }
@@ -135,7 +138,7 @@ function ContractBilan({ extracted }: { extracted: Extracted }) {
     ...(extracted.duree_mois != null
       ? [{ label: "Durée", value: `${extracted.duree_mois} mois` }]
       : []),
-    { label: "Salaire mensuel",   value: fmtSalaire(extracted.salaire_mensuel_fcfa) },
+    { label: "Salaire mensuel",   value: fmtSalaire(extracted.salaire_mensuel_mru) },
     ...(extracted.periode_essai_mois != null
       ? [{ label: "Période d'essai", value: `${extracted.periode_essai_mois} mois` }]
       : []),
@@ -287,28 +290,56 @@ function FindingsCard({ analysis, onDownloadPdf }: { analysis: Analysis; onDownl
 
 // ── Document download card ─────────────────────────────────────────────────
 
-function DocumentCard({ filename, blobUrl }: { filename: string; blobUrl: string }) {
+function DocumentCard({ filename, blobUrl, fileId }: { filename: string; blobUrl?: string; fileId?: string }) {
+  const apiFetch = useApiFetch();
+  const available = !!(fileId || blobUrl);
+
+  const handleDownload = useCallback(async () => {
+    if (fileId) {
+      // Authenticated fetch — sends Authorization header
+      try {
+        const res = await apiFetch(`/api/files/doc/${fileId}`);
+        if (!res.ok) { alert("Fichier non disponible."); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+      } catch { alert("Erreur lors du téléchargement."); }
+    } else if (blobUrl) {
+      const a = document.createElement("a");
+      a.href = blobUrl; a.download = filename; a.click();
+    }
+  }, [fileId, blobUrl, filename, apiFetch]);
+
   return (
     <div className="flex items-center gap-3 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3">
-      <div className="w-9 h-9 rounded-lg bg-black flex items-center justify-center shrink-0">
+      <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${available ? "bg-black" : "bg-neutral-300"}`}>
         <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-neutral-900 truncate">{filename}</p>
-        <p className="text-xs text-neutral-400 mt-0.5">Document Word · prêt à télécharger</p>
+        <p className="text-xs text-neutral-400 mt-0.5">
+          {available ? "Document Word · prêt à télécharger" : "Fichier non disponible"}
+        </p>
       </div>
-      <a
-        href={blobUrl}
-        download={filename}
-        className="flex items-center gap-1.5 bg-black text-white text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-neutral-800 transition-colors shrink-0"
-      >
-        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-        </svg>
-        Télécharger
-      </a>
+      {available ? (
+        <button
+          onClick={handleDownload}
+          className="flex items-center gap-1.5 bg-black text-white text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-neutral-800 transition-colors shrink-0"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Télécharger
+        </button>
+      ) : (
+        <span className="flex items-center gap-1.5 border border-neutral-200 text-neutral-400 text-xs font-medium px-3 py-1.5 rounded-lg shrink-0 cursor-not-allowed">
+          Indisponible
+        </span>
+      )}
     </div>
   );
 }
@@ -509,6 +540,14 @@ export default function Home() {
   const [dragging, setDragging]   = useState(false);
   const [history, setHistory]     = useState<HistoryItem[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [awaitingDocGen, setAwaitingDocGen] = useState(false);
+
+  // Persist awaitingDocGen per analysis in sessionStorage so it survives sidebar navigation
+  useEffect(() => {
+    if (!analysisId) return;
+    if (awaitingDocGen) sessionStorage.setItem(`conformia_aw_${analysisId}`, "1");
+    else sessionStorage.removeItem(`conformia_aw_${analysisId}`);
+  }, [awaitingDocGen, analysisId]);
 
   // Auth guard: redirect unauthenticated or pending users
   useEffect(() => {
@@ -662,6 +701,7 @@ export default function Home() {
     setFile(null);
     setText("");
     setAnalysisId(item.analysis_id);
+    setAwaitingDocGen(sessionStorage.getItem(`conformia_aw_${item.analysis_id}`) === "1");
 
     // ── Try to restore full session from localStorage ──────────────────────
     const stored = loadSession(item.analysis_id);
@@ -725,6 +765,7 @@ export default function Home() {
     setFile(null);
     setText("");
     setBusy(false);
+    setAwaitingDocGen(false);
     setMessages([WELCOME[lang]]);
   }, [lang]);
 
@@ -750,13 +791,14 @@ export default function Home() {
       if (!res.ok) throw new Error(data.detail ?? "Erreur serveur");
 
       const aid = data.analysis_id;
+      const fid: string | undefined = data.file_id;
       setAnalysisId(aid);
       // Persist filename for history restore
       try { localStorage.setItem(FILE_KEY(aid), filename); } catch { /* ignore */ }
 
       setMessages((prev) => [
         ...prev.filter((m) => m.kind !== "thinking"),
-        { kind: "file_ref", filename, analysisId: aid },
+        { kind: "file_ref", filename, analysisId: aid, fileId: fid },
         { kind: "bot", text: lang === "ar" ? "جارٍ تحليل العقد…" : "Analyse du contrat en cours…" },
         { kind: "thinking" },
       ]);
@@ -784,7 +826,7 @@ export default function Home() {
     const infoMarkers = [
       "comment", "qu'est", "que faut", "quels", "quelles", "combien",
       "explique", "expliquer", "informations", "renseignements",
-      "donne moi", "donnez moi", "dis moi",
+      "donnez moi", "dis moi",
       "pour me", "pour generer", "pour rediger", "pour creer",
     ];
     return infoMarkers.some((w) => n.includes(w));
@@ -793,9 +835,34 @@ export default function Home() {
   const isCorrectRequest = (msg: string) => {
     if (isQuestion(msg)) return false;
     const n = stripAccents(msg);
-    const kw = ["corrige", "corriger", "corrigez", "ameliore", "rectifie",
-                "version corrigee", "mise en conformite", "mettre en conformite"];
+    const kw = [
+      "corrige", "corriger", "corrigez",
+      "ameliore", "ameliorez", "ameliorer",
+      "rectifie", "rectifiez",
+      "version corrigee", "rapport corrige", "contrat corrige",
+      "clauses corrigees", "clause corrigee",
+      "mise en conformite", "mettre en conformite",
+    ];
     return !!analysisId && kw.some((k) => n.includes(k));
+  };
+
+  const isConfirmation = (msg: string) => {
+    const n = stripAccents(msg);
+    return ["oui", "yes", "ok ", "okay", "confirme", "vas-y", "vasy", "go ",
+            "bien sur", "d accord", "daccord", "allez", "parfait",
+            "je confirme", "genere", "generer", "telecharger", "svp",
+            "donne", "done", "version corrigee", "contrat corrige", "envoie"].some(
+      (k) => n.includes(k) || n === k.trim()
+    );
+  };
+
+  const isRejection = (msg: string) => {
+    const n = stripAccents(msg);
+    return ["non", "no ", "pas maintenant", "annule", "annuler", "cancel",
+            "stop", "oublie", "laisse tomber", "pas besoin", "pas de docx",
+            "ne genere pas", "ne corrige pas"].some(
+      (k) => n.includes(k) || n === k.trim()
+    );
   };
 
   const isGenerateRequest = (msg: string) => {
@@ -821,29 +888,68 @@ export default function Home() {
     setMessages((prev) => [...prev, { kind: "user", text: msg }, { kind: "thinking" }]);
 
     try {
-      // ── Correction request ───────────────────────────────────────────────
-      if (isCorrectRequest(msg)) {
-        const res = await apiFetch(`/api/correct-document/${analysisId}`, { method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ language: lang }),
-        });
-        if (!res.ok) {
-          let detail = "Erreur lors de la correction";
-          try { detail = (await res.json()).detail ?? detail; } catch { /* non-JSON body */ }
-          throw new Error(detail);
-        }
-        const blob = await res.blob();
-        const disposition = res.headers.get("Content-Disposition") ?? "";
-        const filenameMatch = disposition.match(/filename="([^"]+)"/);
-        const filename = filenameMatch?.[1] ?? "contrat_corrige.docx";
-        const blobUrl = URL.createObjectURL(blob);
+      // ── Rejection: user cancels pending Phase 2 confirmation ─────────────
+      if (awaitingDocGen && isRejection(msg)) {
+        setAwaitingDocGen(false);
+        if (analysisId) sessionStorage.removeItem(`conformia_aw_${analysisId}`);
         setMessages((prev) => [
           ...prev.filter((m) => m.kind !== "thinking"),
-          { kind: "bot", text: "Voici la version corrigée de votre contrat, conforme au droit mauritanien :" },
-          { kind: "document", filename, blobUrl },
+          { kind: "bot", text: lang === "ar"
+            ? "حسناً، تم الإلغاء. يمكنك طلب التصحيح مجدداً في أي وقت."
+            : "D'accord, génération annulée. Vous pouvez relancer la correction quand vous le souhaitez." },
+        ]);
+        setBusy(false);
+        return;
+      }
+
+      // ── Phase 2 : user confirms document generation ──────────────────────
+      if (awaitingDocGen && isConfirmation(msg)) {
+        const res = await apiFetch(`/api/correct-document/${analysisId}`, { method: "POST" });
+        if (!res.ok) {
+          let detail = "Erreur lors de la génération du document";
+          try { detail = (await res.json()).detail ?? detail; } catch { /* */ }
+          throw new Error(detail);
+        }
+        const fileId = res.headers.get("X-File-Id") ?? undefined;
+        const blob = await res.blob();
+        const disposition = res.headers.get("Content-Disposition") ?? "";
+        const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? "contrat_corrige.docx";
+        const blobUrl = fileId ? undefined : URL.createObjectURL(blob);
+        setAwaitingDocGen(false);
+        setMessages((prev) => [
+          ...prev.filter((m) => m.kind !== "thinking"),
+          { kind: "bot", text: lang === "ar" ? "إليك النسخة المصحَّحة من عقدك المتوافقة مع القانون الموريتاني :" : "Voici la version corrigée de votre contrat, conforme au droit mauritanien :" },
+          { kind: "document", filename, blobUrl, fileId },
         ]);
 
-      // ── Generation request ───────────────────────────────────────────────
+      // ── Phase 1 : correction OR any generation when an analysis is active ──
+      // Route ALL generation/correction requests through Phase 1 when an
+      // analysisId is set — never generate directly from the description.
+      } else if (isCorrectRequest(msg) || (!!analysisId && isGenerateRequest(msg))) {
+        const res = await apiFetch(`/api/preview-corrections/${analysisId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: msg, language: lang }),
+        });
+        if (!res.ok) {
+          // Friendly message instead of raw error — keep state clean for retry
+          setMessages((prev) => [
+            ...prev.filter((m) => m.kind !== "thinking"),
+            { kind: "bot", text: lang === "ar"
+              ? "قبل إنشاء المستند، يجب أن أعرض عليك التصحيحات المقترحة أولاً. يُرجى تجربة طلب التصحيح مرة أخرى."
+              : "Avant de générer le document, je dois d'abord vous montrer les corrections proposées. Veuillez relancer votre demande de correction." },
+          ]);
+          setBusy(false);
+          return;
+        }
+        const data = await res.json();
+        setMessages((prev) => [
+          ...prev.filter((m) => m.kind !== "thinking"),
+          { kind: "bot", text: data.preview ?? "" },
+        ]);
+        setAwaitingDocGen(true);
+
+      // ── Generation request (no active analysis — fresh contract) ─────────
       } else if (isGenerateRequest(msg)) {
         const res = await apiFetch("/api/generate-document", {
           method: "POST",
@@ -868,6 +974,8 @@ export default function Home() {
 
       // ── Normal chat ──────────────────────────────────────────────────────
       } else {
+        // If user was asked for confirmation but replied with something else,
+        // keep awaitingDocGen — the confirmation buttons remain visible.
         const isAnalysisDone = analysis?.status === "done";
         const url = (analysisId && isAnalysisDone) ? `/api/chat/${analysisId}` : "/api/chat";
         const res  = await apiFetch(url, {
@@ -892,6 +1000,40 @@ export default function Home() {
       setBusy(false);
     }
   };
+
+  // Called by the confirmation button (Phase 2, button path)
+  const handleGenerateDoc = useCallback(async () => {
+    if (!analysisId || busy) return;
+    setBusy(true);
+    setAwaitingDocGen(false);
+    setMessages((prev) => [...prev, { kind: "thinking" }]);
+    try {
+      const res = await apiFetch(`/api/correct-document/${analysisId}`, { method: "POST" });
+      if (!res.ok) {
+        let detail = "Erreur lors de la génération du document";
+        try { detail = (await res.json()).detail ?? detail; } catch { /* */ }
+        throw new Error(detail);
+      }
+      const fileId = res.headers.get("X-File-Id") ?? undefined;
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? "contrat_corrige.docx";
+      const blobUrl = fileId ? undefined : URL.createObjectURL(blob);
+      setMessages((prev) => [
+        ...prev.filter((m) => m.kind !== "thinking"),
+        { kind: "bot", text: lang === "ar" ? "إليك النسخة المصحَّحة من عقدك المتوافقة مع القانون الموريتاني :" : "Voici la version corrigée de votre contrat, conforme au droit mauritanien :" },
+        { kind: "document", filename, blobUrl, fileId },
+      ]);
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : "Erreur de connexion.";
+      setMessages((prev) => [
+        ...prev.filter((m) => m.kind !== "thinking"),
+        { kind: "error", text: errMsg },
+      ]);
+    } finally {
+      setBusy(false);
+    }
+  }, [analysisId, apiFetch, lang, busy]);
 
   const handleSend = () => {
     if (file)        { submitFile(); return; }
@@ -1119,7 +1261,7 @@ export default function Home() {
                 <div key={i} className="flex items-start gap-3">
                   <BotAvatar />
                   <div className="flex-1 min-w-0 max-w-sm">
-                    <DocumentCard filename={m.filename} blobUrl={m.blobUrl} />
+                    <DocumentCard filename={m.filename} blobUrl={m.blobUrl} fileId={m.fileId} />
                   </div>
                 </div>
               );
@@ -1133,6 +1275,37 @@ export default function Home() {
         {/* Input bar */}
         <div className={`shrink-0 bg-white px-4 pb-5 pt-2 transition-colors ${dragging ? "bg-neutral-50" : ""}`}>
           <div className="max-w-2xl mx-auto">
+
+            {/* Phase 2 confirmation buttons */}
+            {awaitingDocGen && !busy && (
+              <div className="flex gap-2 mb-2">
+                <button
+                  onClick={handleGenerateDoc}
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-black text-white text-sm font-medium py-2.5 rounded-xl hover:bg-neutral-800 transition-colors"
+                >
+                  <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  {lang === "ar" ? "نعم، أنشئ ملف .docx" : "Oui, générer le .docx"}
+                </button>
+                <button
+                  onClick={() => {
+                    setAwaitingDocGen(false);
+                    if (analysisId) sessionStorage.removeItem(`conformia_aw_${analysisId}`);
+                    setMessages((prev) => [
+                      ...prev,
+                      { kind: "bot", text: lang === "ar"
+                        ? "حسناً، تم الإلغاء. يمكنك طلب التصحيح مجدداً في أي وقت."
+                        : "D'accord, génération annulée. Vous pouvez relancer la correction quand vous le souhaitez." },
+                    ]);
+                  }}
+                  className="flex items-center justify-center gap-1.5 border border-neutral-200 text-neutral-600 text-sm font-medium px-4 py-2.5 rounded-xl hover:bg-neutral-50 transition-colors shrink-0"
+                >
+                  {lang === "ar" ? "إلغاء" : "Annuler"}
+                </button>
+              </div>
+            )}
+
             <div className={`bg-white rounded-2xl border transition-all ${
               dragging
                 ? "border-black ring-2 ring-black/10"

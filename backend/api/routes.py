@@ -27,13 +27,17 @@ from db.crud import (
     update_analysis_done,
     update_analysis_error,
     update_analysis_running,
+    create_file_record,
+    link_file_to_analysis,
+    get_file_by_id,
+    get_upload_file_by_analysis,
 )
 from shared.auth import require_approved
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/tmp/conformite_uploads"))
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/data/uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt"}
@@ -122,9 +126,21 @@ async def submit_analysis(
     save_path = UPLOAD_DIR / f"{analysis_id}{ext}"
     save_path.write_bytes(content)
 
+    # Persist file record in DB so it survives container restarts
+    mime_type = _EXT_MEDIA.get(ext, "application/octet-stream")
+    file_id = create_file_record(
+        user_id=current["sub"],
+        original_name=file.filename or f"upload{ext}",
+        storage_path=str(save_path),
+        mime_type=mime_type,
+        size_bytes=len(content),
+        file_type="upload",
+        analysis_id=analysis_id,
+    )
+
     background_tasks.add_task(_run_pipeline_bg, analysis_id, contract_text, jurisdiction, language)
 
-    return {"analysis_id": analysis_id, "status": "pending"}
+    return {"analysis_id": analysis_id, "file_id": file_id, "status": "pending"}
 
 
 # ---------------------------------------------------------------------------
@@ -198,12 +214,36 @@ _EXT_MEDIA = {
     ".txt":  "text/plain; charset=utf-8",
 }
 
+@router.get("/files/doc/{file_id}")
+async def download_file_by_id(file_id: str, current: dict = Depends(require_approved)):
+    """Télécharge n'importe quel fichier (uploadé ou généré) par son file_id."""
+    rec = get_file_by_id(file_id, user_id=current["sub"], user_role=current["role"])
+    if not rec:
+        raise HTTPException(status_code=404, detail="Fichier introuvable ou accès refusé")
+    file_path = Path(rec["storage_path"])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fichier non disponible sur le serveur")
+    media_type = rec["mime_type"] or _EXT_MEDIA.get(file_path.suffix.lower(), "application/octet-stream")
+    return FileResponse(path=str(file_path), media_type=media_type, filename=rec["original_name"])
+
+
 @router.get("/files/{analysis_id}")
 async def download_original_file(analysis_id: str, current: dict = Depends(require_approved)):
     """Retourne le fichier original uploadé pour une analyse donnée."""
+    # Try DB lookup first (persistent storage)
+    db_rec = get_upload_file_by_analysis(analysis_id, user_id=current["sub"], user_role=current["role"])
+    if db_rec:
+        file_path = Path(db_rec["storage_path"])
+        if file_path.exists():
+            media_type = db_rec["mime_type"] or _EXT_MEDIA.get(file_path.suffix.lower(), "application/octet-stream")
+            return FileResponse(path=str(file_path), media_type=media_type, filename=db_rec["original_name"])
+
+    # Auth check via analysis lookup
     rec = get_analysis(analysis_id, user_id=current["sub"], user_role=current["role"])
     if not rec:
         raise HTTPException(status_code=404, detail="Analyse introuvable")
+
+    # Fallback: filesystem glob (legacy / same-container uploads)
     matches = list(UPLOAD_DIR.glob(f"{analysis_id}.*"))
     if not matches:
         raise HTTPException(status_code=404, detail="Fichier non disponible sur le serveur")
@@ -366,6 +406,44 @@ async def generate_document(body: GenerateDocRequest, _: dict = Depends(require_
 
 
 # ---------------------------------------------------------------------------
+# POST /api/preview-corrections/{id}  — Phase 1 : affiche les clauses corrigées en texte
+# ---------------------------------------------------------------------------
+
+@router.post("/preview-corrections/{analysis_id}")
+async def preview_corrections(
+    analysis_id: str,
+    body: ChatRequest,
+    current: dict = Depends(require_approved),
+):
+    """
+    Phase 1 of the correction flow: returns a formatted markdown text
+    showing only the non-compliant clauses with their proposed corrections.
+    Ends with a confirmation question; does NOT produce any file.
+    """
+    rec = get_analysis(analysis_id, user_id=current["sub"], user_role=current["role"])
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Analyse '{analysis_id}' introuvable")
+    if rec["status"] != "done":
+        raise HTTPException(status_code=409, detail="Analyse non terminée")
+
+    original_text = ""
+    matches = list(UPLOAD_DIR.glob(f"{analysis_id}.*"))
+    if matches:
+        try:
+            original_text = extract_text(matches[0].read_bytes(), matches[0].name)
+        except Exception as exc:
+            logger.warning(f"Could not read original file for preview {analysis_id}: {exc}")
+
+    from api.docgen import generate_correction_preview_text
+    try:
+        preview = generate_correction_preview_text(rec, original_text, body.language)
+        return {"preview": preview}
+    except Exception as exc:
+        logger.error(f"preview-corrections error: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
 # POST /api/correct-document/{id}  — corrige le contrat analysé → .docx
 # ---------------------------------------------------------------------------
 
@@ -380,16 +458,50 @@ async def correct_document(analysis_id: str, current: dict = Depends(require_app
     if rec["status"] != "done":
         raise HTTPException(status_code=409, detail=f"Analyse non terminée (status={rec['status']})")
 
+    # Read original contract text from uploaded file
+    original_text = ""
+    matches = list(UPLOAD_DIR.glob(f"{analysis_id}.*"))
+    if matches:
+        try:
+            original_text = extract_text(matches[0].read_bytes(), matches[0].name)
+        except Exception as exc:
+            logger.warning(f"Could not read original file for {analysis_id}: {exc}")
+
     from api.docgen import correct_contract_docx
+    import datetime
     try:
-        title, docx_bytes = correct_contract_docx(rec, rec.get("language", "fr"))
-        safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in title)[:50]
-        filename = f"{safe}.docx"
+        language = rec.get("language", "fr")
+        title, docx_bytes = correct_contract_docx(rec, original_text, language)
+
+        # Build filename: contrat_corrige_{employee}_{date}.docx
+        extracted = rec.get("extracted", {})
+        employee  = extracted.get("employe", "")
+        today     = datetime.date.today().strftime("%Y-%m-%d")
+        name_part = "".join(c if c.isalnum() or c in "-_ " else "_" for c in employee).strip()[:30]
+        filename  = f"contrat_corrige_{name_part}_{today}.docx" if name_part else f"contrat_corrige_{today}.docx"
+
+        # Persist generated file to permanent storage
+        gen_path = UPLOAD_DIR / f"gen_{analysis_id}_{today}.docx"
+        gen_path.write_bytes(docx_bytes)
+        docx_mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        gen_file_id = create_file_record(
+            user_id=current["sub"],
+            original_name=filename,
+            storage_path=str(gen_path),
+            mime_type=docx_mime,
+            size_bytes=len(docx_bytes),
+            file_type="generated",
+            analysis_id=analysis_id,
+        )
+
         return Response(
             content=docx_bytes,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            media_type=docx_mime,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-File-Id": gen_file_id,
+            },
         )
     except Exception as exc:
-        logger.error(f"correct-document error: {exc}")
+        logger.error(f"correct-document error: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
