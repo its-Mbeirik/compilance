@@ -308,15 +308,16 @@ def create_archive(
     doc_type: str,
     original_file_id: Optional[str],
     corrected_file_id: Optional[str],
+    employer_name: Optional[str] = None,
 ) -> str:
     aid = str(uuid.uuid4())
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO archives
-                   (id, analysis_id, user_id, title, doc_type, original_file_id, corrected_file_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                (aid, analysis_id, user_id, title, doc_type, original_file_id, corrected_file_id),
+                   (id, analysis_id, user_id, title, doc_type, employer_name, original_file_id, corrected_file_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                (aid, analysis_id, user_id, title, doc_type, employer_name, original_file_id, corrected_file_id),
             )
     return aid
 
@@ -341,6 +342,7 @@ def list_archives(
             if user_role == "admin" or user_id is None:
                 cur.execute(
                     """SELECT a.id, a.analysis_id, a.user_id, a.title, a.doc_type,
+                              a.employer_name,
                               a.original_file_id, a.corrected_file_id, a.archived_at,
                               fo.original_name, fc.original_name
                        FROM archives a
@@ -351,6 +353,7 @@ def list_archives(
             else:
                 cur.execute(
                     """SELECT a.id, a.analysis_id, a.user_id, a.title, a.doc_type,
+                              a.employer_name,
                               a.original_file_id, a.corrected_file_id, a.archived_at,
                               fo.original_name, fc.original_name
                        FROM archives a
@@ -369,11 +372,12 @@ def list_archives(
             "user_id":           str(r[2]),
             "title":             r[3],
             "doc_type":          r[4],
-            "original_file_id":  str(r[5]) if r[5] else None,
-            "corrected_file_id": str(r[6]) if r[6] else None,
-            "archived_at":       r[7].isoformat() if r[7] else None,
-            "original_name":     r[8],
-            "corrected_name":    r[9],
+            "employer_name":     r[5],
+            "original_file_id":  str(r[6]) if r[6] else None,
+            "corrected_file_id": str(r[7]) if r[7] else None,
+            "archived_at":       r[8].isoformat() if r[8] else None,
+            "original_name":     r[9],
+            "corrected_name":    r[10],
         }
         for r in rows
     ]

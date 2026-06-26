@@ -123,6 +123,7 @@ CREATE TABLE IF NOT EXISTS archives (
     user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title             TEXT,
     doc_type          TEXT,
+    employer_name     TEXT,
     original_file_id  UUID,
     corrected_file_id UUID,
     archived_at       TIMESTAMPTZ DEFAULT NOW()

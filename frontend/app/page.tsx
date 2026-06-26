@@ -568,6 +568,7 @@ export default function Home() {
   const bottomRef      = useRef<HTMLDivElement>(null);
   const pollRef        = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recognitionRef = useRef<any>(null);
+  const autoLoadedRef  = useRef(false);
 
   const [isListening,    setIsListening]    = useState(false);
   const [speakingIndex,  setSpeakingIndex]  = useState<number | null>(null);
@@ -774,6 +775,20 @@ export default function Home() {
     setAwaitingDocGen(false);
     setMessages([WELCOME[lang]]);
   }, [lang]);
+
+  // Auto-load a specific analysis when arriving via /?a={id} ("Voir l'analyse" in archive)
+  useEffect(() => {
+    if (autoLoadedRef.current || !user || user.status !== "approved" || history.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const aId = params.get("a");
+    if (!aId) return;
+    const item = history.find(h => h.analysis_id === aId);
+    if (item) {
+      autoLoadedRef.current = true;
+      loadAnalysis(item);
+      window.history.replaceState({}, "", "/");
+    }
+  }, [user, history, loadAnalysis]);
 
   // ── submit file ───────────────────────────────────────────────────────────
   const submitFile = async () => {

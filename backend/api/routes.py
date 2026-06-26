@@ -539,9 +539,10 @@ async def archive_analysis(analysis_id: str, current: dict = Depends(require_app
     if not original and not corrected:
         raise HTTPException(status_code=404, detail="Aucun fichier trouvé pour cette analyse")
 
-    extracted   = rec.get("extracted") or {}
+    extracted    = rec.get("extracted") or {}
     type_contrat = extracted.get("type_contrat", "Contrat")
-    employe      = (extracted.get("employe") or "").strip()
+    employe      = (extracted.get("employe")   or "").strip()
+    employeur    = (extracted.get("employeur") or "").strip()
     title        = f"{type_contrat} — {employe}" if employe else type_contrat
 
     archive_id = create_archive(
@@ -551,6 +552,7 @@ async def archive_analysis(analysis_id: str, current: dict = Depends(require_app
         doc_type=rec.get("doc_type", ""),
         original_file_id=original["id"] if original else None,
         corrected_file_id=corrected["id"] if corrected else None,
+        employer_name=employeur or None,
     )
     return {
         "archive_id":    archive_id,

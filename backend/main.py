@@ -69,6 +69,7 @@ async def ensure_tables():
                         user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         title             TEXT,
                         doc_type          TEXT,
+                        employer_name     TEXT,
                         original_file_id  UUID,
                         corrected_file_id UUID,
                         archived_at       TIMESTAMPTZ DEFAULT NOW()
@@ -76,6 +77,8 @@ async def ensure_tables():
                 """)
                 cur.execute("CREATE INDEX IF NOT EXISTS archives_user_idx ON archives (user_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS archives_analysis_idx ON archives (analysis_id)")
+                # Idempotent column addition for existing databases
+                cur.execute("ALTER TABLE archives ADD COLUMN IF NOT EXISTS employer_name TEXT")
     except Exception as exc:
         logger.warning("ensure_tables skipped: %s", exc)
 
